@@ -1,0 +1,25 @@
+{
+  "twin_type": "compressor",
+  "description": "Synthetic compressor product twin, driven by the motor twin's shaft. Illustrative only -- the formulas are made up for demonstration and make no engineering claim.",
+  "design_twin_id": "compressor-design",
+  "operational_twin_id": "compressor-op-001",
+  "asset_id": "compressor-asset-001",
+  "vendor": "synthetic-vendor-b",
+  "twin_mode": "observational",
+  "tick_seconds": 2,
+  "channels": [
+    {"channel_id": "speed",       "name": "Drive speed",    "unit": "rpm",    "direction": "input",  "envelope": {"min": 1250, "max": 1600}, "tolerance_pct": 5},
+    {"channel_id": "flow",        "name": "Air flow",       "unit": "m3/min", "direction": "input",  "envelope": {"min": 8,    "max": 16},   "tolerance_pct": 5},
+    {"channel_id": "pressure",    "name": "Outlet pressure","unit": "bar",    "direction": "output", "envelope": {"min": 3.0,  "max": 6.5},  "tolerance_pct": 5},
+    {"channel_id": "temperature", "name": "Outlet temperature", "unit": "degC", "direction": "output", "envelope": {"min": 50, "max": 95}, "tolerance_pct": 5}
+  ],
+  "operating_profile": {
+    "flow": {"nominal": 12, "swing": 2.5, "period_ticks": 35, "jitter": 0.2}
+  },
+  "linked_inputs": {
+    "speed": {"from_twin": "motor", "from_channel": "speed"}
+  },
+  "physical_noise_pct": 1.0,
+  "out_of_envelope_divergence_pct_per_span": 10,
+  "physical_bias_pct": {"pressure": 0.4, "temperature": 0.2}
+}

@@ -1,0 +1,7 @@
+{
+  "name": "healthy",
+  "description": "Both twins running normally, no faults. Gaps should stay well inside the 5% tolerance.",
+  "ticks": 60,
+  "operational_hours_per_tick": 24,
+  "holdout_fraction": 0.3
+}

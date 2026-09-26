@@ -1,0 +1,23 @@
+{
+  "twin_type": "motor",
+  "description": "Synthetic electric motor product twin. Illustrative only -- the formulas are made up for demonstration and make no engineering claim.",
+  "design_twin_id": "motor-design",
+  "operational_twin_id": "motor-op-001",
+  "asset_id": "motor-asset-001",
+  "vendor": "synthetic-vendor-a",
+  "twin_mode": "observational",
+  "tick_seconds": 2,
+  "channels": [
+    {"channel_id": "volt",      "name": "Supply voltage", "unit": "V",    "direction": "input",  "envelope": {"min": 380, "max": 420}, "tolerance_pct": 5},
+    {"channel_id": "current",   "name": "Supply current", "unit": "A",    "direction": "input",  "envelope": {"min": 10,  "max": 30},  "tolerance_pct": 5},
+    {"channel_id": "speed",     "name": "Shaft speed",    "unit": "rpm",  "direction": "output", "envelope": {"min": 1250, "max": 1600}, "tolerance_pct": 5},
+    {"channel_id": "vibration", "name": "Vibration",      "unit": "mm/s", "direction": "output", "envelope": {"min": 1.5, "max": 5.0},  "tolerance_pct": 5}
+  ],
+  "operating_profile": {
+    "volt":    {"nominal": 400, "swing": 12, "period_ticks": 40, "jitter": 1.5},
+    "current": {"nominal": 20,  "swing": 5,  "period_ticks": 55, "jitter": 0.4}
+  },
+  "physical_noise_pct": 1.0,
+  "out_of_envelope_divergence_pct_per_span": 10,
+  "physical_bias_pct": {"speed": 0.3, "vibration": -0.4}
+}
