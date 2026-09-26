@@ -54,3 +54,21 @@ Output lands in `data/` as `<run_id>.jsonl` (one reading per line) plus
   `held_out` at generation time (default 30% held out).
 - **Ground-truth labels**: `injected_faults` records what was injected, for
   testing the engine only. The engine must never read it.
+
+## Cloud Run skeleton
+
+A minimal FastAPI app (`app/main.py`) serving a live view of the generator:
+`/` (page, refreshes every 2 s), `/api/latest` (JSON), `/health`. It is
+stateless: each request works out the current tick from the clock and replays
+the deterministic scenario, so every instance serves identical data. The
+scenario is chosen with the `SCENARIO` env var (default `healthy`).
+
+Deploy (builds run as a dedicated build-only service account, `dtc-builder`,
+holding only `roles/cloudbuild.builds.builder`; the runtime service account
+holds no project roles):
+
+```bash
+gcloud run deploy digital-twin-certification --source . --region us-central1 \
+  --allow-unauthenticated \
+  --build-service-account=projects/project-46053a8a-6324-40f0-ba8/serviceAccounts/dtc-builder@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com
+```
