@@ -22,7 +22,7 @@ from app.state import core_upto, explanations_upto, state_at
 from engine.registry import load_registry
 from explain.facts import EvidenceIntegrityError
 
-app = FastAPI(title="Digital Twin Assurance")
+app = FastAPI(title="TwinEvidence")
 
 _cache: dict[str, RunEvidence] = {}
 _lock = threading.Lock()

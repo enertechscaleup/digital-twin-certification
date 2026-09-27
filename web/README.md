@@ -1,6 +1,6 @@
 # Dashboard
 
-React + Vite front end for the Digital Twin Assurance dashboard. See the main README (Phase 3b).
+React + Vite front end for the TwinEvidence dashboard. See the main README (Phase 3b).
 
 ```bash
 npm install

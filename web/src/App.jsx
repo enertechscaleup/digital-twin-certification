@@ -80,7 +80,7 @@ export default function App() {
     <div className="page">
       <header className="header">
         <div className="brand">
-          <h1>Digital Twin Assurance</h1>
+          <h1>TwinEvidence</h1>
           <div className="sub">{meta.title} · scenario <code>{meta.scenario}</code> · seed {meta.seed} · synthetic data</div>
         </div>
         <div className="clock">
