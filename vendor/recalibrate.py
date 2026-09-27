@@ -2,7 +2,12 @@
 
 Method: fit one multiplicative correction per output channel, in order, to
 the most recent ``fit_last_ticks`` of the data released, scaling that output's
-parameter group. Then restate the twin's expected output ranges by sweeping
+parameter group. Where one output's formula depends on an earlier output
+(motor vibration on speed; compressor temperature on pressure), the owner
+knows that dependence is on the machine's as-designed behaviour, so the
+earlier correction is undone inside that term before the later output is
+fitted. Without this, a single correction factor fitted at one operating
+point does not hold at others. Then restate the twin's expected output ranges by sweeping
 the recalibrated twin across the assured input envelope.
 """
 
@@ -19,6 +24,14 @@ PARAM_GROUPS = {
               "vibration": ("vib_base", "vib_per_rpm_sq", "vib_per_amp")},
     "compressor": {"pressure": ("p_base", "p_per_rpm", "p_per_flow"),
                    "temperature": ("t_ambient", "t_per_bar", "t_per_flow")},
+}
+
+
+# Parameters whose term depends on an earlier output: (that output, power of it in the term).
+# Undoing the earlier output's correction k here means multiplying by k ** -power.
+COUPLED_TERMS = {
+    "motor": {"vib_per_rpm_sq": ("speed", 2)},
+    "compressor": {"t_per_bar": ("pressure", 1)},
 }
 
 
@@ -57,13 +70,18 @@ def recalibrate(twin_type: str, current: TwinModel, released: list[dict],
     samples = [v for v in by_tick.values() if all(n in v for n in input_names)]
 
     params = dict(current.params)
+    corrections: dict[str, float] = {}
     for output in OUTPUT_CHANNELS[twin_type]:
+        for p, (upstream, power) in COUPLED_TERMS.get(twin_type, {}).items():
+            if p in PARAM_GROUPS[twin_type][output] and upstream in corrections:
+                params[p] *= corrections[upstream] ** -power
         model = TwinModel(twin_type, params)
         ratios = [s[output] / model.predict({n: s[n] for n in input_names})[output]
                   for s in samples if output in s]
         if not ratios:
             continue
         k = sum(ratios) / len(ratios)
+        corrections[output] = k
         for p in PARAM_GROUPS[twin_type][output]:
             params[p] *= k
 
@@ -81,7 +99,8 @@ def recalibrate(twin_type: str, current: TwinModel, released: list[dict],
     return Submission(
         twin_type=twin_type, twin_version=new_version, params={k: round(v, 10) for k, v in params.items()},
         declared_output_ranges=ranges,
-        method=f"per-output multiplicative correction fitted to the last {len(fit_ticks)} ticks released",
+        method=(f"per-output multiplicative correction fitted to the last {len(fit_ticks)} ticks released; "
+                "coupled terms referenced to as-designed upstream behaviour"),
         fitted_on_ticks=(min(fit_ticks), max(fit_ticks)),
     )
 
