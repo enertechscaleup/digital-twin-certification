@@ -114,7 +114,7 @@ Setup (needs Python 3.12, plus `gcloud auth application-default login` once):
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install --python .venv/bin/python --only-binary cryptography -r requirements.txt google-genai
+uv pip install --python .venv/bin/python --only-binary cryptography -r requirements-dev.txt
 ```
 
 Run on a saved engine run, then verify:
@@ -136,21 +136,43 @@ Run on a saved engine run, then verify:
   gaps are classified as `twin_fidelity_loss` without asserting twin defect vs
   physical change; no safety claims.
 
-## Cloud Run skeleton
+## Phase 3a: evidence API (Cloud Run)
 
-A minimal FastAPI app (`app/main.py`) serving a live view of the generator:
-`/` (page, refreshes every 2 s), `/api/latest` (JSON), `/health`. It is
-stateless: each request works out the current tick from the clock and replays
-the deterministic scenario, so every instance serves identical data. The
-scenario is chosen with the `SCENARIO` env var (default `healthy`).
+The FastAPI app (`app/`) serves evidence runs for the dashboard to replay. Runs
+are pinned by core-ledger head hash in `app/config/runs.json` and loaded from
+the evidence bucket (`gs://dtc-evidence-ledger-46053a8a/runs/<run>/<head16>/`).
+Nothing is served until it passes 9 checks: the manifest names the pinned
+head, every file matches its manifest fingerprint, both ledger chains are
+intact, every AI artifact is anchored to its core entry, and the readings match
+the checkpoints sealed in the core ledger.
 
-Deploy (builds run as a dedicated build-only service account, `dtc-builder`,
-holding only `roles/cloudbuild.builds.builder`; the service runs as a
-dedicated runtime service account, `dtc-runtime`, which holds no roles at all):
+| Endpoint | Returns |
+|---|---|
+| `GET /api/runs` | Pinned runs |
+| `GET /api/runs/{run}/meta` | Twins, channels, protocol, verification report |
+| `GET /api/runs/{run}/state?tick=N` | Statuses, reasons, assurance versions, open anomalies, recalibration record as of tick N |
+| `GET /api/runs/{run}/timeline|readings|ledger|explanations?upto=N` | Evidence up to tick N only |
+| `POST /api/runs/{run}/verify` | Re-fetches every file from the bucket and re-checks it now (rate-limited) |
+
+Replay happens in the viewer's browser; every endpoint is cut off at the tick
+on screen, so no later evidence leaks into an earlier view.
+
+Local development reads `data/` instead (`EVIDENCE_SOURCE=local`, the default):
+
+```bash
+.venv/bin/uvicorn app.main:app --reload
+```
+
+Deploy (builds run as `dtc-builder`, holding only `roles/cloudbuild.builds.builder`;
+the service runs as `dtc-runtime`, which holds no project roles and only
+`roles/storage.objectViewer` on the evidence bucket):
 
 ```bash
 gcloud run deploy digital-twin-certification --source . --region us-central1 \
   --allow-unauthenticated \
   --service-account=dtc-runtime@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com \
-  --build-service-account=projects/project-46053a8a-6324-40f0-ba8/serviceAccounts/dtc-builder@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com
+  --build-service-account=projects/project-46053a8a-6324-40f0-ba8/serviceAccounts/dtc-builder@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com \
+  --set-env-vars=EVIDENCE_BUCKET=dtc-evidence-ledger-46053a8a
 ```
+
+Development dependencies (Gemini, test client): `requirements-dev.txt`.

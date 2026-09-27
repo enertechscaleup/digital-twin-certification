@@ -1,55 +1,59 @@
-"""Minimal Cloud Run skeleton: a live view of the telemetry generator.
+"""Dashboard backend: serves pinned, verified evidence runs for replay.
 
-Stateless by design. Cloud Run pauses CPU between requests, so a background
-generator loop would stall. Instead every request works out the current tick
-from the clock and replays the (deterministic) scenario up to that tick.
-Every instance therefore serves identical data with no shared state.
-
-The scenario loops: each cycle lasts ``ticks x tick_seconds`` and restarts
-from tick 0 with a start time aligned to the cycle boundary.
+Replay happens in the viewer's browser (one tick every 2 seconds, under the
+viewer's control). Every endpoint accepts ``upto`` / ``tick`` so the dashboard
+and assistant only ever see what the evidence says up to the tick on screen.
 """
 
 from __future__ import annotations
 
-import json
 import os
-from datetime import datetime, timedelta, timezone
-from functools import lru_cache
-from pathlib import Path
+import threading
+import time
+from collections import defaultdict, deque
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from telemetry.faults import Scenario
-from telemetry.generator import GENERATOR_VERSION, Reading, TelemetryGenerator
+from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_run
+from app.state import core_upto, explanations_upto, state_at
+from engine.registry import load_registry
+from explain.facts import EvidenceIntegrityError
 
-ROOT = Path(__file__).resolve().parent.parent
-SCENARIO_NAME = os.environ.get("SCENARIO", "healthy")
-SEED = int(os.environ.get("SEED", "42"))
-EPOCH = datetime(2026, 1, 1, tzinfo=timezone.utc)
+app = FastAPI(title="Digital Twin Assurance")
 
-app = FastAPI(title="Digital Twin Certification — telemetry skeleton")
-
-
-@lru_cache(maxsize=1)
-def _scenario() -> Scenario:
-    return Scenario.from_dict(json.loads((ROOT / "scenarios" / f"{SCENARIO_NAME}.json").read_text()))
+_cache: dict[str, RunEvidence] = {}
+_lock = threading.Lock()
+VERIFY_LIMIT_PER_MINUTE = int(os.environ.get("VERIFY_LIMIT_PER_MINUTE", "6"))
+_verify_calls: dict[str, deque] = defaultdict(deque)
 
 
-@lru_cache(maxsize=4)
-def _cycle(cycle_start: datetime) -> tuple[tuple[Reading, ...], ...]:
-    gen = TelemetryGenerator(seed=SEED, start_time=cycle_start)
-    return tuple(tuple(batch) for batch in gen.field_run(_scenario()))
+def _pinned(run: str) -> dict:
+    cfg = load_runs_config()
+    for r in cfg["runs"]:
+        if r["run"] == run:
+            return r
+    raise HTTPException(404, f"unknown run {run!r}")
 
 
-def _current() -> tuple[int, list[Reading]]:
-    scenario = _scenario()
-    tick_seconds = TelemetryGenerator(seed=SEED, start_time=EPOCH).tick_seconds
-    elapsed = (datetime.now(timezone.utc) - EPOCH).total_seconds()
-    cycle_seconds = scenario.ticks * tick_seconds
-    cycle_start = EPOCH + timedelta(seconds=(elapsed // cycle_seconds) * cycle_seconds)
-    tick = int((elapsed % cycle_seconds) // tick_seconds)
-    return tick, list(_cycle(cycle_start)[tick])
+def evidence(run: str) -> RunEvidence:
+    with _lock:
+        if run not in _cache:
+            pin = _pinned(run)
+            try:
+                _cache[run] = verify_run(store_from_env(), run, pin["title"], pin["core_ledger_head_hash"])
+            except EvidenceIntegrityError as exc:
+                raise HTTPException(503, f"evidence failed verification and will not be served: {exc}")
+        return _cache[run]
+
+
+def _upto(ev: RunEvidence, upto: int | None) -> int:
+    return len(ev.timeline) - 1 if upto is None else upto
+
+
+def _client(request: Request) -> str:
+    fwd = request.headers.get("x-forwarded-for")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
 
 
 @app.get("/health")
@@ -57,39 +61,110 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.get("/api/latest")
-def latest() -> dict:
-    tick, batch = _current()
+@app.get("/api/runs")
+def runs() -> dict:
+    cfg = load_runs_config()
+    return {"default": cfg["default"], "runs": [{"run": r["run"], "title": r["title"],
+                                                  "core_ledger_head_hash": r["core_ledger_head_hash"]} for r in cfg["runs"]]}
+
+
+@app.get("/api/runs/{run}/meta")
+def meta(run: str) -> dict:
+    ev = evidence(run)
+    reg = load_registry()
+    started = next(e["payload"] for e in ev.core if e["entry_type"] == "run_started")
     return {
-        "scenario": SCENARIO_NAME,
-        "seed": SEED,
-        "generator_version": GENERATOR_VERSION,
-        "tick": tick,
-        "readings": [r.__dict__ for r in batch],
+        "run": run, "title": ev.title, "ticks": len(ev.timeline), "tick_seconds": ev.tick_seconds,
+        "start_time": ev.manifest["start_time"], "scenario": started["scenario"], "seed": started["seed"],
+        "escalation_protocol": started["escalation_protocol"],
+        "ai_model": ev.manifest.get("ai_model"), "code_commit": ev.manifest.get("code_commit"),
+        "evidence_source": ev.source, "verification": ev.verification,
+        "twins": {
+            p.operational_twin_id: {
+                "twin_type": p.twin_type, "design_twin_id": p.design_twin_id, "vendor": p.vendor,
+                "channels": [{"channel_id": c.channel_id, "name": c.name, "unit": c.unit, "direction": c.direction,
+                              "envelope": [c.env_min, c.env_max], "tolerance_pct": c.tolerance_pct}
+                             for c in p.channels],
+            } for p in reg.products.values()
+        },
+        "system_twin": {
+            "twin_id": reg.system.operational_system_twin_id,
+            "constituents": [reg.products[t].operational_twin_id for t in reg.system.constituents],
+            "outputs_come_from": [reg.products[t].operational_twin_id for t in reg.system.output_constituents],
+            "connections": list(reg.system.connections),
+        },
     }
 
 
+@app.get("/api/runs/{run}/state")
+def state(run: str, tick: int | None = None) -> dict:
+    ev = evidence(run)
+    return state_at(ev, _upto(ev, tick))
+
+
+@app.get("/api/runs/{run}/timeline")
+def timeline(run: str, upto: int | None = None) -> list[dict]:
+    ev = evidence(run)
+    return ev.timeline[: _upto(ev, upto) + 1]
+
+
+@app.get("/api/runs/{run}/readings")
+def readings(run: str, upto: int | None = None, twin_id: str | None = None) -> list[dict]:
+    ev = evidence(run)
+    last = _upto(ev, upto)
+    return [r for r in ev.readings if r["tick"] <= last and (twin_id is None or r["twin_id"] == twin_id)]
+
+
+@app.get("/api/runs/{run}/ledger")
+def ledger(run: str, upto: int | None = None) -> list[dict]:
+    ev = evidence(run)
+    return core_upto(ev, _upto(ev, upto))
+
+
+@app.get("/api/runs/{run}/explanations")
+def explanations(run: str, upto: int | None = None) -> list[dict]:
+    ev = evidence(run)
+    return explanations_upto(ev, _upto(ev, upto))
+
+
+@app.post("/api/runs/{run}/verify")
+def verify(run: str, request: Request) -> dict:
+    """Re-fetch every file from the evidence store and re-check it now."""
+    now, calls = time.monotonic(), _verify_calls[_client(request)]
+    while calls and now - calls[0] > 60:
+        calls.popleft()
+    if len(calls) >= VERIFY_LIMIT_PER_MINUTE:
+        raise HTTPException(429, "too many verification requests; try again in a minute")
+    calls.append(now)
+    pin = _pinned(run)
+    try:
+        fresh = verify_run(store_from_env(), run, pin["title"], pin["core_ledger_head_hash"])
+    except EvidenceIntegrityError as exc:
+        return {"valid": False, "error": str(exc)}
+    return fresh.verification
+
+
 PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Twin Telemetry Skeleton</title>
-<style>body{font:14px system-ui,sans-serif;margin:16px}table{border-collapse:collapse}
-td,th{border:1px solid #ccc;padding:4px 8px;text-align:right}th{background:#f4f4f4}
-td:nth-child(-n+3){text-align:left}.note{color:#666}</style></head><body>
-<h1 style="font-size:18px">Digital Twin Certification: live telemetry (Phase 1 skeleton)</h1>
-<p class="note">Synthetic data. Refreshes every 2 seconds. Placeholder only; not the dashboard.</p>
-<p id="meta"></p><table id="t"></table>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Digital Twin Assurance</title>
+<style>body{font:14px system-ui,sans-serif;margin:16px;max-width:900px}code{font-size:12px}
+li{margin:4px 0}.ok{color:#137333}.bad{color:#b3261e}</style></head><body>
+<h1 style="font-size:18px">Digital Twin Assurance: evidence API (Phase 3a)</h1>
+<p>The dashboard is being built. The evidence runs below are pinned by ledger fingerprint and verified before they are served.</p>
+<ul id="runs"></ul>
 <script>
-async function refresh(){
-  try{
-    const d=await (await fetch('api/latest')).json();
-    document.getElementById('meta').textContent=
-      `scenario ${d.scenario} · seed ${d.seed} · tick ${d.tick} · ${d.readings[0].timestamp}`;
-    const f=v=>v==null?'—':v;
-    document.getElementById('t').innerHTML='<tr><th>twin</th><th>channel</th><th>direction</th><th>physical</th><th>predicted</th><th>unit</th></tr>'+
-      d.readings.map(r=>`<tr><td>${r.twin_id}</td><td>${r.channel_id}</td><td>${r.direction}</td><td>${f(r.physical_value)}</td><td>${f(r.predicted_value)}</td><td>${r.unit}</td></tr>`).join('');
-  }catch(e){document.getElementById('meta').textContent='error: '+e;}
+async function go(){
+  const r=await (await fetch('api/runs')).json();
+  document.getElementById('runs').innerHTML=r.runs.map(x=>`<li><b>${x.title}</b> <code>${x.core_ledger_head_hash.slice(0,16)}</code>
+   <button onclick="v('${x.run}',this)">Verify evidence now</button> <span></span></li>`).join('');
 }
-refresh();setInterval(refresh,2000);
+async function v(run,btn){
+  const s=btn.nextElementSibling; s.textContent='checking...';
+  const res=await fetch('api/runs/'+run+'/verify',{method:'POST'}); const d=await res.json();
+  if(!res.ok){s.textContent=d.detail;return}
+  s.className=d.valid?'ok':'bad';
+  s.textContent=d.valid?`valid: ${d.checks.length} checks passed in ${d.seconds}s from ${d.source}`:'INVALID: '+d.error;
+}
+go();
 </script></body></html>"""
 
 

@@ -1,0 +1,21 @@
+{
+  "_note": "Runs served by the app, pinned by core ledger head hash. Evidence is loaded from gs://<bucket>/runs/<run>/<first 16 chars of head hash>/ and verified before it is served.",
+  "default": "assurance-demo_full_cycle-seed42",
+  "runs": [
+    {
+      "run": "assurance-demo_full_cycle-seed42",
+      "title": "Full assurance cycle",
+      "core_ledger_head_hash": "eeb0bdd16d67fb18036068a122ca54cdf023ff9750de20ecad2c74d37a050a38"
+    },
+    {
+      "run": "assurance-demo_wear_to_nullified-seed42",
+      "title": "Wear to nullified",
+      "core_ledger_head_hash": "59744025634cb0b470653138c02939fffe45d6d967f96566522dc39bd5b94a7d"
+    },
+    {
+      "run": "assurance-faults_showcase-seed42",
+      "title": "Fault types showcase",
+      "core_ledger_head_hash": "681f49e9ed6073f471ef907ec43d4db55ca3e54768da4b7afb860b0247ff32af"
+    }
+  ]
+}
