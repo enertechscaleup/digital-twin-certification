@@ -8,12 +8,14 @@ and assistant only ever see what the evidence says up to the tick on screen.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import threading
 import time
 from collections import defaultdict, deque
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_run
 from app.state import core_upto, explanations_upto, state_at
@@ -79,6 +81,7 @@ def meta(run: str) -> dict:
         "escalation_protocol": started["escalation_protocol"],
         "ai_model": ev.manifest.get("ai_model"), "code_commit": ev.manifest.get("code_commit"),
         "evidence_source": ev.source, "verification": ev.verification,
+        "display_ranges": _display_ranges(ev),
         "twins": {
             p.operational_twin_id: {
                 "twin_type": p.twin_type, "design_twin_id": p.design_twin_id, "vendor": p.vendor,
@@ -94,6 +97,35 @@ def meta(run: str) -> dict:
             "connections": list(reg.system.connections),
         },
     }
+
+
+@app.get("/api/runs/{run}/view")
+def view(run: str, tick: int) -> dict:
+    """Everything the dashboard shows for one tick, cut off at that tick."""
+    ev = evidence(run)
+    t = max(0, min(tick, len(ev.timeline) - 1))
+    return {
+        "state": state_at(ev, t),
+        "readings": [r for r in ev.readings if r["tick"] <= t],
+        "timeline": ev.timeline[: t + 1],
+        "ledger": core_upto(ev, t),
+        "explanations": explanations_upto(ev, t),
+    }
+
+
+def _display_ranges(ev: RunEvidence) -> dict:
+    """Fixed chart axes for the whole run, so charts never rescale mid-replay."""
+    out: dict[str, dict] = {}
+    for r in ev.readings:
+        key = f"{r['twin_id']}/{r['channel_id']}"
+        for v in (r["physical_value"], r["predicted_value"]):
+            if isinstance(v, (int, float)) and v == v:
+                lo, hi = out.get(key, {}).get("min", v), out.get(key, {}).get("max", v)
+                out[key] = {"min": min(lo, v), "max": max(hi, v)}
+    gaps = [g.get("gap_pct") for row in ev.timeline for tw in row["classifications"].values()
+            for g in tw.values() if g.get("gap_pct") is not None]
+    out["gap_pct_max"] = max(gaps) if gaps else 0
+    return out
 
 
 @app.get("/api/runs/{run}/state")
@@ -144,30 +176,12 @@ def verify(run: str, request: Request) -> dict:
     return fresh.verification
 
 
-PAGE = """<!doctype html><html><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>Digital Twin Assurance</title>
-<style>body{font:14px system-ui,sans-serif;margin:16px;max-width:900px}code{font-size:12px}
-li{margin:4px 0}.ok{color:#137333}.bad{color:#b3261e}</style></head><body>
-<h1 style="font-size:18px">Digital Twin Assurance: evidence API (Phase 3a)</h1>
-<p>The dashboard is being built. The evidence runs below are pinned by ledger fingerprint and verified before they are served.</p>
-<ul id="runs"></ul>
-<script>
-async function go(){
-  const r=await (await fetch('api/runs')).json();
-  document.getElementById('runs').innerHTML=r.runs.map(x=>`<li><b>${x.title}</b> <code>${x.core_ledger_head_hash.slice(0,16)}</code>
-   <button onclick="v('${x.run}',this)">Verify evidence now</button> <span></span></li>`).join('');
-}
-async function v(run,btn){
-  const s=btn.nextElementSibling; s.textContent='checking...';
-  const res=await fetch('api/runs/'+run+'/verify',{method:'POST'}); const d=await res.json();
-  if(!res.ok){s.textContent=d.detail;return}
-  s.className=d.valid?'ok':'bad';
-  s.textContent=d.valid?`valid: ${d.checks.length} checks passed in ${d.seconds}s from ${d.source}`:'INVALID: '+d.error;
-}
-go();
-</script></body></html>"""
-
-
-@app.get("/", response_class=HTMLResponse)
-def index() -> str:
-    return PAGE
+# The built React dashboard: app/static in the container, web/dist in development.
+_STATIC = next((d for d in (Path(__file__).parent / "static", Path(__file__).parent.parent / "web" / "dist")
+                if (d / "index.html").exists()), None)
+if _STATIC:
+    app.mount("/", StaticFiles(directory=_STATIC, html=True), name="dashboard")
+else:
+    @app.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        return "<p>Dashboard not built. Run <code>npm run build</code> in <code>web/</code>.</p>"

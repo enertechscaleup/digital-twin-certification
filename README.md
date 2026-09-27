@@ -157,6 +157,28 @@ the checkpoints sealed in the core ledger.
 Replay happens in the viewer's browser; every endpoint is cut off at the tick
 on screen, so no later evidence leaks into an earlier view.
 
+## Phase 3b: dashboard
+
+React (Vite) in `web/`, built into the container and served by the same
+Cloud Run service. The viewer replays a run at 2 s per tick; each tick fetches
+`/api/runs/{run}/view?tick=N`, so the browser never holds later evidence.
+
+- Opens on the motor alone; "Connect compressor & system twin" reveals the
+  system (`?stage=system` to start revealed, `?reveal=N` to reveal at tick N).
+- Twin cards with traced reasons; a cascade reason whose constituent has been
+  re-assured is shown as resolved rather than hidden.
+- Physical vs predicted charts, gap charts with the 5% and 10% lines and live
+  "gap now" figures, the compressor's input against its assured range, with
+  not-evaluated ticks shaded.
+- Recalibration panel (time split, seals, held-out results, v1 to v2, system
+  reassessment), AI explanations, anomalies (demo acknowledgements stay in the
+  browser), ledger, and live re-verification.
+- `?tick=N` opens at a tick; `?tick_ms=200` speeds playback for previews.
+
+```bash
+cd web && npm install && npm run build   # then the FastAPI app serves web/dist
+```
+
 Local development reads `data/` instead (`EVIDENCE_SOURCE=local`, the default):
 
 ```bash

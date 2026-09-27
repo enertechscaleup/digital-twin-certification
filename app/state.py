@@ -63,6 +63,17 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
     row = ev.timeline[tick]
     for tid, level in row["status"].items():
         twin(tid)["status"] = level  # the engine's own per-tick record is authoritative
+
+    # Status is sticky, so a cascade reason stays on the record after its
+    # constituent is re-assured. Label it resolved rather than hiding it.
+    for tw in twins.values():
+        for r in tw["reasons"]:
+            src = twins.get(r.get("constituent") or "")
+            if r["cause"] == "cascade" and src and src["status"] == "assured":
+                reissued = [h for h in src["assurance_history"] if h["issued_at_tick"] > r["since_tick"]]
+                if reissued:
+                    r["resolved"] = {"at_tick": reissued[-1]["issued_at_tick"],
+                                     "note": f"constituent re-assured as {reissued[-1]['assurance_id']}"}
     return {
         "tick": tick,
         "timestamp": row["timestamp"],

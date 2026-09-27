@@ -84,6 +84,17 @@ class TestDashboardApi(unittest.TestCase):
         reads = self.client.get(f"/api/runs/{RUN}/readings", params={"upto": 5, "twin_id": "motor-op-001"}).json()
         self.assertEqual(len(reads), 6 * 4)
 
+    def test_view_is_cut_off_and_labels_resolved_cascade(self):
+        v = self.client.get(f"/api/runs/{RUN}/view", params={"tick": 65}).json()
+        self.assertEqual(max(r["tick"] for r in v["readings"]), 65)
+        self.assertEqual(len(v["timeline"]), 66)
+        self.assertTrue(all(e["tick"] <= 65 for e in v["ledger"]))
+        reasons = {r["cause"]: r for r in v["state"]["twins"]["compressor-system-op-001"]["reasons"]}
+        self.assertEqual(reasons["cascade"]["resolved"]["at_tick"], 60)
+        self.assertNotIn("resolved", reasons["own_output"])
+        v30 = self.client.get(f"/api/runs/{RUN}/view", params={"tick": 30}).json()
+        self.assertNotIn("cascade", [r["cause"] for r in v30["state"]["twins"].get("compressor-system-op-001", {}).get("reasons", [])])
+
     def test_verify_endpoint_and_rate_limit(self):
         main._verify_calls.clear()
         for _ in range(main.VERIFY_LIMIT_PER_MINUTE):
