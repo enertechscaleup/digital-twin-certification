@@ -25,6 +25,7 @@ from telemetry.generator import GENERATOR_VERSION, TelemetryGenerator
 class RunResult:
     ledger: EvidenceLedger
     timeline: list[dict]
+    readings: list[dict]  # every ingested field reading, as the engine saw it
     monitor: FieldMonitor | None
     assured: bool  # did every twin pass design-time assurance?
 
@@ -88,7 +89,7 @@ def run_assurance(
     if not all_assured:
         ledger.append("run_completed", ts0, {"reason": "design-time assurance refused; no field monitoring"})
         ledger.close()
-        return RunResult(ledger, [], None, False)
+        return RunResult(ledger, [], [], None, False)
 
     # A system twin can only be composed from assured product twins.
     sys = registry.system
@@ -108,16 +109,21 @@ def run_assurance(
 
     # Operation: field validation and escalation, tick by tick.
     monitor = FieldMonitor(registry, protocol, ledger, product_ids, system_asr, checkpoint_every)
-    timeline = [monitor.process_tick([ingest(asdict(r)) for r in batch]) for batch in gen.field_run(scenario)]
+    readings: list[dict] = []
+    timeline = []
+    for batch in gen.field_run(scenario):
+        tick_readings = [ingest(asdict(r)) for r in batch]
+        readings.extend(tick_readings)
+        timeline.append(monitor.process_tick(tick_readings))
     monitor.finish()
     ledger.append("run_completed", timeline[-1]["timestamp"] if timeline else ts0, {
         "ticks": len(timeline),
         "final_status": {tid: {"level": a.level, "assurance_id": a.assurance_id} for tid, a in monitor.status.items()},
     })
     ledger.close()
-    return RunResult(ledger, timeline, monitor, True)
+    return RunResult(ledger, timeline, readings, monitor, True)
 
 
-def write_timeline(timeline: list[dict], path: Path) -> None:
+def write_jsonl(rows: list[dict], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("".join(json.dumps(t) + "\n" for t in timeline), encoding="utf-8")
+    path.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")

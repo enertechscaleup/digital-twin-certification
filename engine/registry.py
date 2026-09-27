@@ -57,6 +57,7 @@ class SystemTwin:
     operational_system_twin_id: str
     constituents: tuple[str, ...]  # twin types
     output_constituents: tuple[str, ...]  # constituents whose outputs are the system's outputs
+    connections: tuple[dict, ...] = ()  # which constituent output feeds which constituent input
 
 
 @dataclass(frozen=True)
@@ -93,5 +94,6 @@ def load_registry() -> Registry:
             operational_system_twin_id=s["operational_system_twin_id"],
             constituents=tuple(s["constituents"]),
             output_constituents=tuple(s["output_constituents"]),
+            connections=tuple(s.get("connections", [])),
         ),
     )

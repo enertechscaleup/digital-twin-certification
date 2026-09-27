@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engine.ledger import load_ledger, verify_chain
-from engine.run import run_assurance, write_timeline
+from engine.run import run_assurance, write_jsonl
 from telemetry.faults import Scenario
 
 
@@ -22,7 +22,8 @@ def cmd_run(args: argparse.Namespace) -> None:
     stem = f"assurance-{raw['name']}-seed{args.seed}"
     ledger_path = args.out / f"{stem}.ledger.jsonl"
     result = run_assurance(Scenario.from_dict(raw), seed=args.seed, start_time=start, ledger_path=ledger_path)
-    write_timeline(result.timeline, args.out / f"{stem}.timeline.jsonl")
+    write_jsonl(result.timeline, args.out / f"{stem}.timeline.jsonl")
+    write_jsonl(result.readings, args.out / f"{stem}.readings.jsonl")
 
     for e in result.ledger.entries:
         p = e["payload"]
