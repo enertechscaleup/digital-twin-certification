@@ -41,6 +41,7 @@ class Assurance:
     assurance_id: str
     level: str = "assured"
     reasons: list[dict] = field(default_factory=list)
+    flagged_since_tick: int | None = None  # when it first left "assured" under this assurance
 
     def reason_keys(self) -> set[tuple]:
         return {_reason_key(r) for r in self.reasons}
@@ -124,6 +125,40 @@ class FieldMonitor:
         """Seal any readings not yet covered by a checkpoint."""
         if self._pending_readings:
             self._checkpoint()
+
+    def reassure(self, twin_id: str, new_assurance_id: str, tick: int, ts: str) -> None:
+        """Switch a product twin to a newly issued assurance version: fresh
+        status and fresh consecutive counters. Open anomaly episodes are closed
+        at the switch, so no episode spans two assurance versions."""
+        for key in [k for k in self._episodes if k[0] == twin_id]:
+            self._close_episode(key, tick, ts)
+        for (tid, _), st in self._channels.items():
+            if tid == twin_id:
+                st.gap_run = st.critical_run = st.envelope_run = 0
+        self.status[twin_id] = Assurance(twin_id, new_assurance_id)
+
+    def reassess_system(self, tick: int, ts: str) -> dict:
+        """After a constituent is re-assured: a new composition version is only
+        possible if every constituent is assured. Otherwise record what blocks it.
+        The system twin's own status is not changed here (status is sticky)."""
+        sys = self.registry.system
+        current = self.status[sys.operational_system_twin_id]
+        members = [self.status[self.registry.products[t].operational_twin_id] for t in sys.constituents]
+        blockers = [{"constituent": m.twin_id, "assurance_id": m.assurance_id, "status": m.level,
+                     "reasons": [r for r in m.reasons if r["level"] == m.level]}
+                    for m in members if m.level != "assured"]
+        payload = {"system_twin_id": sys.operational_system_twin_id, "current_assurance_id": current.assurance_id,
+                   "system_status": current.level, "tick": tick,
+                   "constituent_assurance_ids": [m.assurance_id for m in members]}
+        if blockers:
+            return self.ledger.append("composition_reassessment", ts, {
+                **payload, "result": "not_reassured", "blocked_by": blockers})
+        stem, v = current.assurance_id.rsplit("-v", 1)
+        new_id = f"{stem}-v{int(v) + 1}"
+        entry = self.ledger.append("composition_reassessment", ts, {
+            **payload, "result": "reassured", "new_composition_assurance_id": new_id})
+        self.status[sys.operational_system_twin_id] = Assurance(sys.operational_system_twin_id, new_id)
+        return entry
 
     def acknowledge(self, anomaly_id: str, acknowledged_by: str, action: str, timestamp: str) -> dict:
         """Record a human response to an anomaly -- who, when, what followed."""
@@ -302,6 +337,8 @@ class FieldMonitor:
         payload = {"twin_id": twin_id, "assurance_id": a.assurance_id, "tick": tick, "new_reasons": new}
         if new_level != a.level:
             self.ledger.append("assurance_status_changed", ts, {**payload, "from": a.level, "to": new_level})
+            if a.level == "assured":
+                a.flagged_since_tick = tick
             a.level = new_level
         else:
             self.ledger.append("assurance_reason_added", ts, {**payload, "status": a.level})

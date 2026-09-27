@@ -1,0 +1,10 @@
+{
+  "name": "demo_full_cycle",
+  "description": "Full assurance lifecycle. The motor wears from tick 5 and settles at 15% wear (a stable worn state): Assured -> Flagged -> Nullified. At tick 60 the operator requests recalibration; the platform splits the flagged-period data by time, seals both parts, hands only the earlier part to the twin's owner, re-verifies and validates the recalibrated twin on the held-out later part, and issues a new assurance version. The compressor stays Flagged (its speed input remains below its assured range), so the system twin stays Flagged with that traced reason.",
+  "ticks": 80,
+  "operational_hours_per_tick": 24,
+  "wear": [
+    {"twin_type": "motor", "start_tick": 5, "pct_per_1000_hours": {"speed": -20, "vibration": 20}, "max_abs_pct": 15}
+  ],
+  "recalibration": {"twin_type": "motor", "at_tick": 60}
+}

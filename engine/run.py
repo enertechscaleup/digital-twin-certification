@@ -14,6 +14,7 @@ from engine.ledger import EvidenceLedger
 from engine.monitor import FieldMonitor
 from engine.protocol import EscalationProtocol
 from engine.readings import ingest
+from engine.recalibration import Recalibrator, run_recalibration
 from engine.registry import Registry, load_registry
 from engine.validation import bench_validate
 from engine.verification import verify
@@ -43,6 +44,7 @@ def run_assurance(
     registry: Registry | None = None,
     twins: dict | None = None,
     checkpoint_every: int = 10,
+    recalibrator: Recalibrator | None = None,
 ) -> RunResult:
     protocol = protocol or EscalationProtocol()
     registry = registry or load_registry()
@@ -111,10 +113,21 @@ def run_assurance(
     monitor = FieldMonitor(registry, protocol, ledger, product_ids, system_asr, checkpoint_every)
     readings: list[dict] = []
     timeline = []
+    recal = scenario.recalibration
+    if recal and recalibrator is None:
+        raise ValueError("scenario requests recalibration but no twin owner (recalibrator) was supplied")
     for batch in gen.field_run(scenario):
         tick_readings = [ingest(asdict(r)) for r in batch]
         readings.extend(tick_readings)
         timeline.append(monitor.process_tick(tick_readings))
+        # The generator produces each tick lazily, so a recalibrated twin swapped
+        # in here is the one the operator runs from the requested tick onward.
+        if recal and tick_readings[0]["tick"] + 1 == recal.at_tick:
+            product = registry.products[recal.twin_type]
+            new_twin = run_recalibration(ledger, monitor, product, gen.twins[recal.twin_type], readings,
+                                         recal.at_tick, gen._timestamp(recal.at_tick), protocol, recalibrator)
+            if new_twin is not None:
+                gen.twins[recal.twin_type] = new_twin
     monitor.finish()
     ledger.append("run_completed", timeline[-1]["timestamp"] if timeline else ts0, {
         "ticks": len(timeline),

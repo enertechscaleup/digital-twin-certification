@@ -28,6 +28,11 @@ class EscalationProtocol:
     # Envelope violations can move status to Flagged, never to Nullified:
     # the twin was used outside where it was tested, not shown to be wrong.
     envelope_can_nullify: bool = False
+    # Recalibration (Real2Sim): flagged-period data is split BY TIME. The earlier
+    # part is released to the twin's owner; the later part is held out and used
+    # only by the platform to validate the recalibrated twin.
+    holdout_fraction: float = 0.3
+    min_holdout_ticks: int = 5
 
     def to_dict(self) -> dict:
         return asdict(self)

@@ -27,6 +27,9 @@ class WearDrift:
     # Signed drift per channel, in percent per 1000 operational hours.
     # e.g. {"speed": -20, "vibration": 20}: speed falls, vibration rises.
     pct_per_1000_hours: dict[str, float] = field(default_factory=dict)
+    # Optional cap on wear magnitude, in percent: wear grows until it reaches
+    # this level, then holds steady (the component has settled into a worn state).
+    max_abs_pct: float | None = None
 
     def label(self) -> str:
         return "wear_drift"
@@ -35,7 +38,10 @@ class WearDrift:
         if tick < self.start_tick:
             return {}
         hours_worn = hours_since_start - self.start_tick * hours_per_tick
-        return {ch: rate * hours_worn / 1000 for ch, rate in self.pct_per_1000_hours.items()}
+        wear = {ch: rate * hours_worn / 1000 for ch, rate in self.pct_per_1000_hours.items()}
+        if self.max_abs_pct is not None:
+            wear = {ch: max(-self.max_abs_pct, min(self.max_abs_pct, v)) for ch, v in wear.items()}
+        return wear
 
 
 @dataclass(frozen=True)
@@ -83,6 +89,15 @@ class DataQualityFault:
 
 
 @dataclass(frozen=True)
+class RecalibrationRequest:
+    """An operator's request, at ``at_tick``, to recalibrate a flagged or
+    nullified Operational Twin. How the data is split is the platform's rule,
+    not the operator's."""
+    twin_type: str
+    at_tick: int
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     ticks: int
@@ -92,6 +107,7 @@ class Scenario:
     wear: tuple[WearDrift, ...] = ()
     envelope_violations: tuple[EnvelopeViolation, ...] = ()
     data_quality: tuple[DataQualityFault, ...] = ()
+    recalibration: RecalibrationRequest | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "Scenario":
@@ -102,4 +118,5 @@ class Scenario:
             wear=tuple(WearDrift(**w) for w in d.get("wear", [])),
             envelope_violations=tuple(EnvelopeViolation(**e) for e in d.get("envelope_violations", [])),
             data_quality=tuple(DataQualityFault(**q) for q in d.get("data_quality", [])),
+            recalibration=RecalibrationRequest(**d["recalibration"]) if d.get("recalibration") else None,
         )
