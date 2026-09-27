@@ -64,11 +64,12 @@ the deterministic scenario, so every instance serves identical data. The
 scenario is chosen with the `SCENARIO` env var (default `healthy`).
 
 Deploy (builds run as a dedicated build-only service account, `dtc-builder`,
-holding only `roles/cloudbuild.builds.builder`; the runtime service account
-holds no project roles):
+holding only `roles/cloudbuild.builds.builder`; the service runs as a
+dedicated runtime service account, `dtc-runtime`, which holds no roles at all):
 
 ```bash
 gcloud run deploy digital-twin-certification --source . --region us-central1 \
   --allow-unauthenticated \
+  --service-account=dtc-runtime@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com \
   --build-service-account=projects/project-46053a8a-6324-40f0-ba8/serviceAccounts/dtc-builder@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com
 ```
