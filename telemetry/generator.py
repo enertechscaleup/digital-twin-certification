@@ -87,6 +87,9 @@ class TelemetryGenerator:
         self.start_time = (start_time or datetime.now(timezone.utc)).replace(microsecond=0)
         self.configs = {t: load_config(t) for t in TWIN_ORDER}
         self.twins = twins or {t: TwinModel(t) for t in TWIN_ORDER}
+        # Operator setpoints: (twin_type, input channel) -> value held from now on,
+        # replacing the operating profile's nominal and swing (jitter still applies).
+        self.setpoints: dict[tuple[str, str], float] = {}
         tick_seconds = {c["tick_seconds"] for c in self.configs.values()}
         if len(tick_seconds) != 1:
             raise ValueError("all twins must share one tick cadence")
@@ -204,11 +207,12 @@ class TelemetryGenerator:
                         true_in[ch] = true_outputs[src["from_twin"]][src["from_channel"]]
                     else:
                         p = cfg["operating_profile"][ch]
-                        true_in[ch] = (
-                            p["nominal"]
-                            + p["swing"] * math.sin(2 * math.pi * tick / p["period_ticks"])
-                            + profile_rng.gauss(0, p["jitter"])
-                        )
+                        # One jitter draw either way, so a setpoint never shifts other channels' randomness.
+                        jitter = profile_rng.gauss(0, p["jitter"])
+                        if (twin_type, ch) in self.setpoints:
+                            true_in[ch] = self.setpoints[(twin_type, ch)] + jitter
+                        else:
+                            true_in[ch] = p["nominal"] + p["swing"] * math.sin(2 * math.pi * tick / p["period_ticks"]) + jitter
                     for ev in scenario.envelope_violations:
                         if ev.twin_type == twin_type and ev.channel == ch and ev.active(tick):
                             # Real operation is never perfectly steady: jitter around the forced value.

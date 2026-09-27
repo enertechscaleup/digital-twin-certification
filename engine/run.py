@@ -10,6 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engine import ENGINE_VERSION
+from engine.adjustment import Advisor, AdjustmentEpisode
 from engine.ledger import EvidenceLedger
 from engine.monitor import FieldMonitor
 from engine.protocol import EscalationProtocol
@@ -45,6 +46,7 @@ def run_assurance(
     twins: dict | None = None,
     checkpoint_every: int = 10,
     recalibrator: Recalibrator | None = None,
+    advisor: Advisor | None = None,
 ) -> RunResult:
     protocol = protocol or EscalationProtocol()
     registry = registry or load_registry()
@@ -116,10 +118,19 @@ def run_assurance(
     recal = scenario.recalibration
     if recal and recalibrator is None:
         raise ValueError("scenario requests recalibration but no twin owner (recalibrator) was supplied")
+    episode = None
+    if scenario.adjustment:
+        if advisor is None:
+            raise ValueError("scenario requests an adjustment episode but no twin owner (advisor) was supplied")
+        episode = AdjustmentEpisode(scenario.adjustment, registry, ledger, monitor, advisor)
     for batch in gen.field_run(scenario):
         tick_readings = [ingest(asdict(r)) for r in batch]
         readings.extend(tick_readings)
         timeline.append(monitor.process_tick(tick_readings))
+        tick = tick_readings[0]["tick"]
+        if episode:
+            episode.after_tick(tick, tick_readings[0]["timestamp"], tick_readings, timeline[-1]["classifications"],
+                               gen.twins[scenario.adjustment.twin_type])
         # The generator produces each tick lazily, so a recalibrated twin swapped
         # in here is the one the operator runs from the requested tick onward.
         if recal and tick_readings[0]["tick"] + 1 == recal.at_tick:
@@ -128,6 +139,8 @@ def run_assurance(
                                          recal.at_tick, gen._timestamp(recal.at_tick), protocol, recalibrator)
             if new_twin is not None:
                 gen.twins[recal.twin_type] = new_twin
+        if episode:
+            episode.before_tick(tick + 1, gen._timestamp(tick + 1), gen)
     monitor.finish()
     ledger.append("run_completed", timeline[-1]["timestamp"] if timeline else ts0, {
         "ticks": len(timeline),

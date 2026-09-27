@@ -22,9 +22,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     stem = f"assurance-{raw['name']}-seed{args.seed}"
     ledger_path = args.out / f"{stem}.ledger.jsonl"
     # The twin owner is a separate party; the engine is handed it, never imports it.
+    from vendor.advise import recommend
     from vendor.recalibrate import owner_for_platform
     result = run_assurance(Scenario.from_dict(raw), seed=args.seed, start_time=start, ledger_path=ledger_path,
-                           recalibrator=owner_for_platform)
+                           recalibrator=owner_for_platform, advisor=recommend)
     write_jsonl(result.timeline, args.out / f"{stem}.timeline.jsonl")
     write_jsonl(result.readings, args.out / f"{stem}.readings.jsonl")
 
@@ -36,6 +37,21 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"[{e['seq']:3d}] {e['entry_type']:<16} {p['twin_id']:<20} {'PASS' if p['passed'] else 'FAIL'}")
         elif e["entry_type"] in ("assurance_issued", "composition_assured", "assurance_refused"):
             print(f"[{e['seq']:3d}] {e['entry_type']:<16} {p.get('assurance_id') or p.get('composition_assurance_id') or p['twin_id']}")
+        elif e["entry_type"].startswith("adjustment_"):
+            if e["entry_type"] == "adjustment_recommended":
+                r = p["recommendation"]
+                extra = (f"{r['control_channel']} {r['from']:.1f} -> {r['to']}, predicted objective "
+                         f"{p['predicted_objective_value']:.1f} (margin {p['predicted_margin_above_objective']:+.1f})")
+            elif e["entry_type"] == "adjustment_approval":
+                extra = f"{p['decision']} by {p['approver']}"
+            elif e["entry_type"] == "adjustment_post_state_check":
+                extra = (f"Sim2Real {'PASS' if p['sim2real_passed'] else 'FAIL'} ("
+                         + ", ".join(f"{c} max gap {d['max_gap_pct']}%" for c, d in p["sim2real"].items())
+                         + f"); objective {p['objective']['ticks_in_range']}/{p['objective']['ticks_checked']} ticks in range, "
+                         f"lowest {p['objective']['min_value']:.1f}")
+            else:
+                extra = p.get("reason", p.get("note", ""))
+            print(f"[{e['seq']:3d}] tick {p['tick']:3d}  {e['entry_type']:<28} {extra}")
         elif e["entry_type"] in ("assurance_status_changed", "assurance_reason_added"):
             what = f"{p['from']} -> {p['to']}" if e["entry_type"] == "assurance_status_changed" else f"still {p['status']}, new reason"
             causes = "; ".join(f"{r['cause']}" + (f" on {r['channel_id']}" if r.get("channel_id") else "")

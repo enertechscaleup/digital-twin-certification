@@ -9,6 +9,7 @@ from pathlib import Path
 from engine.ledger import verify_chain
 from engine.run import run_assurance
 from telemetry.faults import RecalibrationRequest, Scenario, WearDrift
+from vendor.advise import recommend
 from vendor.recalibrate import owner_for_platform, recalibrate
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -23,7 +24,7 @@ def full_cycle(**overrides):
 
 
 def run(s, recalibrator=owner_for_platform):
-    return run_assurance(s, seed=42, start_time=START, recalibrator=recalibrator)
+    return run_assurance(s, seed=42, start_time=START, recalibrator=recalibrator, advisor=recommend)
 
 
 def first(result, entry_type):

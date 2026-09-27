@@ -88,7 +88,8 @@ export default function Chart({ W = 680, H = 300, xMax, yMin, yMax, series = [],
         {hlines.map((h) => (
           <g key={`h${h.y}${h.label}`}>
             <line x1={M.l} x2={W - M.r} y1={y(h.y)} y2={y(h.y)} stroke={h.color} strokeWidth={3} strokeDasharray="10 6" />
-            <Halo x={W - M.r - 6} y={y(h.y) - 9} textAnchor="end" fontSize="20" fontWeight="800" fill={h.color}>{h.label}</Halo>
+            <Halo x={h.left ? M.l + 8 : W - M.r - 6} y={h.below ? y(h.y) + 24 : y(h.y) - 9} textAnchor={h.left ? 'start' : 'end'}
+              fontSize="20" fontWeight="800" fill={h.color}>{h.label}</Halo>
           </g>
         ))}
 

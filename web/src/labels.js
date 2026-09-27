@@ -66,6 +66,11 @@ export function summarize(e) {
     case 'recalibration_refused': return `Recalibration refused: ${p.reason}`
     case 'assurance_superseded': return `${p.old_assurance_id} superseded by ${p.new_assurance_id}`
     case 'composition_reassessment': return `System reassessed: ${p.result === 'reassured' ? 're-assured' : 'not re-assured'}`
+    case 'adjustment_recommended': return `${who(p.twin_id)} twin recommends ${p.recommendation.control_channel} ${p.recommendation.from.toFixed(1)} → ${p.recommendation.to}`
+    case 'adjustment_approval': return `Adjustment ${p.decision === 'approve' ? 'approved' : 'declined'} by ${p.approver}`
+    case 'adjustment_executed': return `Adjustment executed: ${p.control_channel} set to ${p.setpoint}`
+    case 'adjustment_post_state_check': return `Post-state check: Sim2Real ${p.sim2real_passed ? 'PASS' : 'FAIL'}, objective ${p.objective.met ? 'met' : 'not met'}`
+    case 'adjustment_refused': return `Adjustment refused: ${p.reason}`
     case 'run_completed': return 'Run completed'
     default: return e.entry_type
   }

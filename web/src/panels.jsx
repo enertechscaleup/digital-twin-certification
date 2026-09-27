@@ -3,6 +3,8 @@ import Chart from './Chart.jsx'
 import { CAUSES, anomalyClass, anomalyLabel, fmtNum, short, summarize, twinName } from './labels.js'
 
 const STATUS_COLOR = { flagged: '#b45309', nullified: '#b3261e', assured: '#137333' }
+// Inputs charted besides connected ones: the motor's supply voltage, the control input for adjustments.
+const DISPLAY_INPUTS = { 'motor-op-001': ['volt'] }
 
 /* ---------- Twins ---------- */
 
@@ -65,6 +67,12 @@ function statusMarkers(ledger, twinId, tick) {
     if (e.entry_type === 'assurance_issued' && p.twin_id === twinId && p.supersedes) {
       out.push({ x: e.tick, label: `v2 assured @${e.tick}`, color: STATUS_COLOR.assured })
     }
+    if (e.entry_type === 'adjustment_recommended' && twinId !== 'compressor-system-op-001') {
+      out.push({ x: p.tick, label: `Recommended @${p.tick}`, color: '#1a73e8' })
+    }
+    if (e.entry_type === 'adjustment_executed' && twinId !== 'compressor-system-op-001') {
+      out.push({ x: p.tick, label: `Executed @${p.tick}`, color: '#0b57d0' })
+    }
   }
   return out
 }
@@ -77,9 +85,10 @@ function paddedRange(r, pad = 0.08) {
 export function TwinCharts({ meta, view, twinId, tick }) {
   const twin = meta.twins[twinId]
   const outputs = twin.channels.filter((c) => c.direction === 'output')
-  const linked = meta.system_twin.connections
-    .filter((c) => twinId.startsWith(c.to_twin))
-    .map((c) => twin.channels.find((ch) => ch.channel_id === c.to_channel))
+  const linkedIds = meta.system_twin.connections.filter((c) => twinId.startsWith(c.to_twin)).map((c) => c.to_channel)
+  const inputIds = [...linkedIds, ...(DISPLAY_INPUTS[twinId] || [])]
+  const inputs = inputIds.map((id) => twin.channels.find((ch) => ch.channel_id === id))
+  const rec = view.ledger.find((e) => e.entry_type === 'adjustment_recommended')
   const readings = view.readings.filter((r) => r.twin_id === twinId)
   const series = (ch, field) => readings.filter((r) => r.channel_id === ch).map((r) => [r.tick, r[field]])
   const markers = statusMarkers(view.ledger, twinId, tick)
@@ -94,22 +103,34 @@ export function TwinCharts({ meta, view, twinId, tick }) {
 
   return (
     <div className="section">
-      {linked.map((ch) => {
-        const [lo, hi] = paddedRange({
-          min: Math.min(meta.display_ranges[`${twinId}/${ch.channel_id}`].min, ch.envelope[0]),
-          max: Math.max(meta.display_ranges[`${twinId}/${ch.channel_id}`].max, ch.envelope[0]),
-        })
+      {inputs.map((ch) => {
+        const isLinked = linkedIds.includes(ch.channel_id)
+        const dr = meta.display_ranges[`${twinId}/${ch.channel_id}`]
+        const [lo, hi] = isLinked
+          ? paddedRange({ min: Math.min(dr.min, ch.envelope[0]), max: Math.max(dr.max, ch.envelope[0]) })
+          : paddedRange({ min: Math.min(dr.min, ch.envelope[0]), max: Math.max(dr.max, ch.envelope[1]) })
+        const hl = isLinked
+          ? [{ y: ch.envelope[0], label: `Assured minimum ${fmtNum(ch.envelope[0], 0)} ${ch.unit}`, color: '#137333' }]
+          : [{ y: ch.envelope[1], label: `Assured maximum ${fmtNum(ch.envelope[1], 0)} ${ch.unit}`, color: '#137333' }]
+        if (isLinked && rec) {
+          hl.push({ y: rec.payload.predicted_objective_value, left: true, color: '#1a73e8',
+            label: `Predicted after adjustment ${fmtNum(rec.payload.predicted_objective_value, 0)} ${ch.unit} (+${fmtNum(rec.payload.predicted_margin_above_objective, 0)} above minimum)` })
+        }
+        if (!isLinked && rec && rec.payload.recommendation.control_channel === ch.channel_id) {
+          hl.push({ y: rec.payload.recommendation.to, left: true, below: true, color: '#1a73e8',
+            label: `Recommended setpoint ${fmtNum(rec.payload.recommendation.to, 0)} ${ch.unit}` })
+        }
         return (
           <div className="panel chart-card section" key={ch.channel_id}>
-            <h3>{twinName(twinId)} {ch.name.toLowerCase()} (input, driven by the motor) vs its assured range</h3>
+            <h3>{twinName(twinId)} {ch.name.toLowerCase()} ({isLinked ? 'input, driven by the motor' : 'input'}) vs its assured range</h3>
             <div className="legend">
               <span><span className="key" style={{ borderTopColor: '#111827' }} />Measured {ch.unit}</span>
               <span><span className="key" style={{ borderTopColor: '#34a853', borderTopWidth: 10 }} />Assured range {fmtNum(ch.envelope[0], 0)}–{fmtNum(ch.envelope[1], 0)} {ch.unit}</span>
-              <span>Grey = outputs not evaluated (input outside assured range)</span>
+              {isLinked && <span>Grey = outputs not evaluated (input outside assured range)</span>}
             </div>
-            <Chart W={1400} H={260} xMax={xMax} yMin={lo} yMax={hi} cursor={tick} shade={notEvaluated}
+            <Chart W={1400} H={260} xMax={xMax} yMin={lo} yMax={hi} cursor={tick} shade={isLinked ? notEvaluated : []}
               band={{ min: ch.envelope[0], max: ch.envelope[1] }}
-              hlines={[{ y: ch.envelope[0], label: `Assured minimum ${fmtNum(ch.envelope[0], 0)} ${ch.unit}`, color: '#137333' }]}
+              hlines={hl}
               vlines={markers}
               series={[{ label: 'measured', color: '#111827', points: series(ch.channel_id, 'physical_value') }]} />
           </div>
@@ -389,6 +410,54 @@ export function Assistant({ run, tick, showSystem }) {
           style={{ flex: 1, font: 'inherit', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8 }} />
         <button className="btn primary" disabled={busy || !q.trim()}>Ask</button>
       </form>
+    </div>
+  )
+}
+
+/* ---------- Semi-autonomous adjustment ---------- */
+
+export function Adjustment({ state }) {
+  const steps = Object.fromEntries(state.adjustment.map((e) => [e.entry_type, e.payload]))
+  const rec = steps.adjustment_recommended
+  const refused = steps.adjustment_refused
+  if (!rec && !refused) return null
+  const appr = steps.adjustment_approval
+  const exe = steps.adjustment_executed
+  const post = steps.adjustment_post_state_check
+  const r = rec?.recommendation
+  const obj = rec?.objective
+  const Mark = ({ ok }) => <span className={`mark ${ok ? 'ok' : 'bad'}`}>{ok ? '✓' : '✗'}</span>
+  return (
+    <div className="panel section">
+      <h2>Semi-autonomous adjustment · {twinName(rec?.twin_id || refused.twin_id)}</h2>
+      {rec && <p className="hint">Goal: {obj.description.toLowerCase()} ({fmtNum(obj.assured_range[0], 0)} rpm or more). The twin recommends; a named human approves; it is executed once; the platform checks the result.</p>}
+      {rec && (
+        <div className="grid-3" style={{ marginBottom: 14 }}>
+          <div><div className="hint" style={{ margin: 0 }}>Recommended {r.control_channel === 'volt' ? 'supply voltage' : r.control_channel}</div>
+            <div className="figure">{fmtNum(r.from, 1)} → {fmtNum(r.to, 1)} V</div>
+            <div className="hint" style={{ margin: 0 }}>by twin {r.twin_version} under {rec.assurance_id}</div></div>
+          <div><div className="hint" style={{ margin: 0 }}>Predicted compressor drive speed</div>
+            <div className="figure">{fmtNum(rec.predicted_objective_value, 1)} rpm</div>
+            <div className={rec.predicted_margin_above_objective > 0 ? 'ok' : 'bad'} style={{ fontWeight: 800, fontSize: 18 }}>
+              {rec.predicted_margin_above_objective > 0 ? '+' : ''}{fmtNum(rec.predicted_margin_above_objective, 1)} rpm above the {fmtNum(obj.assured_range[0], 0)} minimum</div></div>
+          <div><div className="hint" style={{ margin: 0 }}>Outcome after execution</div>
+            {post ? <>
+              <div className={`figure ${post.objective.met ? 'ok' : 'bad'}`}>{post.objective.ticks_in_range} of {post.objective.ticks_checked} ticks in range</div>
+              <div className="hint" style={{ margin: 0 }}>lowest {fmtNum(post.objective.min_value, 1)} rpm (+{fmtNum(post.objective.min_value - obj.assured_range[0], 1)})</div>
+            </> : <div className="hint" style={{ fontSize: 18 }}>{exe ? 'checking…' : 'not yet executed'}</div>}</div>
+        </div>
+      )}
+      <ul className="steps">
+        {rec && <li><Mark ok={rec.pre_state_input_range_check.passed} /> Pre-state check at tick {rec.tick}: every motor input inside its assured range; twin mode <b>{rec.twin_mode.replace('_', '-')}</b>, status assured</li>}
+        {rec && <li><Mark ok={rec.setpoint_within_assured_range.passed} /> Recommended setpoint {fmtNum(r.to, 1)} V is inside the assured range {rec.setpoint_within_assured_range.assured_range.join('–')} V
+          {r.predicted_to_meet_margin ? '' : ` · the twin owner's preferred 2% margin is not reached; the ${fmtNum(obj.assured_range[0], 0)} rpm minimum is`}</li>}
+        {appr && <li><Mark ok={appr.decision === 'approve'} /> {appr.decision === 'approve' ? 'Approved' : 'Declined'} by <b>{appr.approver}</b> at tick {appr.tick} (human approval, recorded in the ledger)</li>}
+        {exe && <li><Mark ok /> Executed once at tick {exe.tick}; the system then returns to passive monitoring</li>}
+        {post && <li><Mark ok={post.sim2real_passed} /> Sim2Real, ticks {post.check_ticks.join('–')}: reality {post.sim2real_passed ? 'matched' : 'did not match'} the predicted end-state ({Object.entries(post.sim2real).map(([c, d]) => `${c} within ${fmtNum(d.max_gap_pct, 1)}%`).join(', ')}; tolerance 5%)</li>}
+        {post && <li><Mark ok={post.objective.met} /> Objective: compressor drive speed back in its assured range on {post.objective.ticks_in_range} of {post.objective.ticks_checked} ticks</li>}
+        {post && <li><span className="mark warn">•</span> Status is sticky: the compressor and system twin stay flagged until re-assured</li>}
+        {refused && <li><Mark ok={false} /> Refused at tick {refused.tick}: {refused.reason}</li>}
+      </ul>
     </div>
   )
 }

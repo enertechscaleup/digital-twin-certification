@@ -17,6 +17,7 @@ from explain import supplementary
 from explain.gemini import generate_artifacts
 from telemetry.faults import Scenario
 from tests.test_explain import FakeGemini
+from vendor.advise import recommend
 from vendor.recalibrate import owner_for_platform
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -26,7 +27,8 @@ RUN = "assurance-demo_full_cycle-seed42"
 def build_pack(directory: Path) -> str:
     s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "demo_full_cycle.json").read_text()))
     r = run_assurance(s, seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
-                      ledger_path=directory / f"{RUN}.ledger.jsonl", recalibrator=owner_for_platform)
+                      ledger_path=directory / f"{RUN}.ledger.jsonl", recalibrator=owner_for_platform,
+                      advisor=recommend)
     write_jsonl(r.readings, directory / f"{RUN}.readings.jsonl")
     write_jsonl(r.timeline, directory / f"{RUN}.timeline.jsonl")
     sup = supplementary.start(directory / f"{RUN}.supplementary.jsonl", r.ledger.entries)

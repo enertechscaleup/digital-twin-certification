@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Anomalies, Assistant, Composition, Explanations, Ledger, Recalibration, TwinCard, TwinCharts, Verification } from './panels.jsx'
+import { Adjustment, Anomalies, Assistant, Composition, Explanations, Ledger, Recalibration, TwinCard, TwinCharts, Verification } from './panels.jsx'
 import { entryTwins } from './labels.js'
 
 const params = new URLSearchParams(window.location.search)
@@ -126,6 +126,7 @@ export default function App() {
       </div>
 
       <Recalibration state={state} showSystem={showSystem} />
+      {showSystem && <Adjustment state={state} />}
 
       <Assistant run={run} tick={tick} showSystem={showSystem} />
 

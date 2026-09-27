@@ -36,6 +36,7 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
 
     open_anomalies: dict[str, dict] = {}
     recalibration: list[dict] = []
+    adjustment: list[dict] = []
     for e in entries:
         t, p = e["entry_type"], e["payload"]
         if t == "assurance_issued":
@@ -58,6 +59,8 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
             open_anomalies[p["anomaly_id"]] = {**p, "ledger_seq": e["seq"]}
         elif t == "anomaly_closed":
             open_anomalies.pop(p["anomaly_id"], None)
+        elif t.startswith("adjustment_"):
+            adjustment.append({"seq": e["seq"], "entry_type": t, "tick": e["tick"], "payload": p})
         elif t.startswith("recalibration_") or t in ("held_out_validation", "assurance_superseded",
                                                      "composition_reassessment"):
             recalibration.append({"seq": e["seq"], "entry_type": t, "tick": e["tick"], "payload": p})
@@ -84,6 +87,7 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
         "classifications": row["classifications"],
         "open_anomalies": list(open_anomalies.values()),
         "recalibration": recalibration,
+        "adjustment": adjustment,
         "ledger_entries_so_far": len(entries),
         "ledger_head_so_far": entries[-1]["entry_hash"] if entries else None,
     }

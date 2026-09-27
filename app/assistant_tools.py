@@ -115,6 +115,13 @@ class Toolbox:
         return {"tick": self.tick, "steps": [{**s, "payload": _trim(s["payload"])} for s in steps],
                 "note": "Empty if no recalibration has happened by this tick."}
 
+    def get_adjustment_episode(self) -> dict:
+        if self.motor_only:
+            return {"note": "Adjustment episodes involve the connected compressor; they are not visible in the motor-only view."}
+        steps = state_at(self.ev, self.tick)["adjustment"]
+        return {"tick": self.tick, "steps": [{**s, "payload": _trim(s["payload"])} for s in steps],
+                "note": "Empty if no semi-autonomous adjustment has happened by this tick."}
+
     def get_ai_explanations(self, twin_id: str | None = None) -> dict:
         out = []
         for e in explanations_upto(self.ev, self.tick):
@@ -171,6 +178,8 @@ TOOL_SCHEMAS = [
      "parameters": {"type": "object", "properties": {"entry_type": {"type": "string"}, "twin_id": TWIN_ID,
                                                      "limit": {"type": "integer"}}}},
     {"name": "get_recalibration", "description": "The recalibration (Real2Sim) record up to the current tick: time split, seals, owner submission, re-verification, held-out validation, new assurance version, system reassessment.",
+     "parameters": {"type": "object", "properties": {}}},
+    {"name": "get_adjustment_episode", "description": "The semi-autonomous adjustment episode up to the current tick: pre-state and input-range check, the twin's recommendation and predicted end-state, the human approval, execution, and the post-state Sim2Real and objective checks.",
      "parameters": {"type": "object", "properties": {}}},
     {"name": "get_ai_explanations", "description": "Supplementary Gemini explanations already generated for status changes and sensor anomalies up to the current tick.",
      "parameters": {"type": "object", "properties": {"twin_id": TWIN_ID}}},

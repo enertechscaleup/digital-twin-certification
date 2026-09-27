@@ -5,7 +5,7 @@
   "operational_twin_id": "motor-op-001",
   "asset_id": "motor-asset-001",
   "vendor": "synthetic-vendor-a",
-  "twin_mode": "observational",
+  "twin_mode": "semi_autonomous",
   "tick_seconds": 2,
   "channels": [
     {"channel_id": "volt",      "name": "Supply voltage", "unit": "V",    "direction": "input",  "envelope": {"min": 380, "max": 420}, "tolerance_pct": 5},

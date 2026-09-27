@@ -98,6 +98,21 @@ class RecalibrationRequest:
 
 
 @dataclass(frozen=True)
+class AdjustmentRequest:
+    """A semi-autonomous adjustment episode: the twin recommends a setpoint on
+    one of its inputs to meet an objective on a connected channel; a named
+    human approves; it is executed once; the platform checks the outcome."""
+    twin_type: str
+    control_channel: str
+    recommend_at_tick: int
+    approve_at_tick: int
+    execute_at_tick: int
+    check_ticks: int
+    objective: dict  # {"twin_type", "channel", "description"}: into that channel's assured range
+    approval: dict  # {"approver", "decision"}
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     ticks: int
@@ -108,6 +123,7 @@ class Scenario:
     envelope_violations: tuple[EnvelopeViolation, ...] = ()
     data_quality: tuple[DataQualityFault, ...] = ()
     recalibration: RecalibrationRequest | None = None
+    adjustment: AdjustmentRequest | None = None
 
     @classmethod
     def from_dict(cls, d: dict) -> "Scenario":
@@ -119,4 +135,5 @@ class Scenario:
             envelope_violations=tuple(EnvelopeViolation(**e) for e in d.get("envelope_violations", [])),
             data_quality=tuple(DataQualityFault(**q) for q in d.get("data_quality", [])),
             recalibration=RecalibrationRequest(**d["recalibration"]) if d.get("recalibration") else None,
+            adjustment=AdjustmentRequest(**d["adjustment"]) if d.get("adjustment") else None,
         )
