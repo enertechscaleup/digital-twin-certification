@@ -10,7 +10,8 @@ from pathlib import Path
 from engine.registry import load_registry
 from engine.run import run_assurance
 from explain.facts import EvidenceIntegrityError
-from explain.gemini import RESPONSE_SCHEMA, SUPPLEMENTARY_NOTICE, generate_artifacts
+from explain import supplementary
+from explain.gemini import CLASSIFICATIONS, RESPONSE_SCHEMA, SUPPLEMENTARY_NOTICE, generate_artifacts
 from telemetry.faults import Scenario
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -87,6 +88,41 @@ class TestExplain(unittest.TestCase):
             names += [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names]
             for name in names:
                 self.assertFalse(name.startswith(("explain", "google")), f"{path.name} imports {name}")
+
+    def test_fact_pack_gives_true_anomaly_start_ticks(self):
+        ledger, readings, timeline = wear_run()
+        fake = FakeGemini()
+        generate_artifacts(ledger, readings, timeline, load_registry(), fake)
+        facts = json.loads(fake.prompts[-1].split("FACTS (JSON):\n", 1)[1])  # tick 37 event
+        comp = [a for a in facts["anomaly_history"] if a["twin_id"] == "compressor-op-001"]
+        self.assertEqual(comp[0]["opened_at_tick"], 23)  # before the readings window starts
+        self.assertGreater(facts["readings_window_ticks"][0], 23)
+        self.assertIn("not a forecast", facts["prediction_note"])
+
+    def test_classification_does_not_assert_cause(self):
+        self.assertIn("twin_fidelity_loss", CLASSIFICATIONS)
+        self.assertNotIn("twin_prediction_fault", CLASSIFICATIONS)
+
+    def test_supplementary_ledger_anchors_to_core(self):
+        ledger, readings, timeline = wear_run()
+        sup = supplementary.start(None, ledger)
+        generate_artifacts(ledger, readings, timeline, load_registry(), FakeGemini(),
+                           on_artifact=lambda a: supplementary.record(sup, a))
+        self.assertTrue(supplementary.verify(sup.entries, ledger).valid)
+        # Altered core ledger: the binding breaks.
+        other = copy.deepcopy(ledger)
+        other[-1]["payload"]["ticks"] = 0
+        self.assertFalse(supplementary.verify(sup.entries, other).valid)
+        # The last AI artifact re-pointed at a different core event, with its own hash
+        # recomputed so the supplementary chain itself still verifies: the anchor check catches it.
+        from engine.ledger import _entry_hash, verify_chain
+        forged = copy.deepcopy(sup.entries)
+        forged[-1]["payload"]["explains_ledger_seq"] = 3
+        forged[-1]["entry_hash"] = _entry_hash(forged[-1])
+        self.assertTrue(verify_chain(forged).valid)
+        check = supplementary.verify(forged, ledger)
+        self.assertFalse(check.valid)
+        self.assertIn("does not match", check.reason)
 
     def test_schema_requires_every_field(self):
         self.assertEqual(set(RESPONSE_SCHEMA["required"]), set(RESPONSE_SCHEMA["properties"]))

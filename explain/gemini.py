@@ -25,8 +25,11 @@ from engine.ledger import sha256_hex
 from engine.registry import Registry
 from explain.facts import check_evidence, fact_pack
 
-DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "")
-DEFAULT_LOCATION = os.environ.get("GEMINI_LOCATION", "us-central1")
+# Pinned model. gemini-3.8-flash (GA) is served only from the global endpoint on
+# Vertex AI; us-central1 does not offer it (checked 2026-09-27). Changing the
+# model is a recorded change: every artifact carries the model ID it came from.
+PINNED_MODEL = "gemini-3.8-flash"
+PINNED_LOCATION = "global"
 SUPPLEMENTARY_NOTICE = "Supplementary AI artifact. Not used in any assurance decision."
 
 SYSTEM_INSTRUCTION = """You write explanations for an independent digital twin assurance platform.
@@ -42,7 +45,14 @@ Rules you must follow:
 4. Reason across correlated channels and connected twins where the facts show a relationship
    (for example, one twin's output feeding another twin's input).
 5. Cite specific ticks, channels, values, and gap percentages from the facts. Use the units given.
-6. Plain English for a non-specialist operator. Short sentences. No markdown.
+   When saying when something started, use anomaly_history and earlier_status_events; the readings
+   window is only the most recent ticks and its first tick is not when anything started.
+6. A twin's predicted value is its simulation of the same instant, computed from that tick's inputs.
+   Never describe it as a forecast, expectation, or prediction of the future ("would rise", "expected to").
+7. A gap between physical and predicted values shows the twin and reality no longer agree. The data cannot
+   tell whether the twin is defective or the physical equipment has changed (for example, wear). Do not
+   assert either one as the cause.
+8. Plain English for a non-specialist operator. Short sentences. No markdown.
 """
 
 TASKS = {
@@ -63,7 +73,9 @@ TASKS = {
     ),
 }
 
-CLASSIFICATIONS = ["sensor_fault", "twin_prediction_fault", "operating_outside_envelope", "unclear"]
+# "twin_fidelity_loss" deliberately does not say whether the twin is defective or the physical
+# equipment changed: gap data alone cannot tell those apart.
+CLASSIFICATIONS = ["sensor_fault", "twin_fidelity_loss", "operating_outside_envelope", "unclear"]
 
 RESPONSE_SCHEMA = {
     "type": "object",
@@ -73,7 +85,12 @@ RESPONSE_SCHEMA = {
         "evidence_cited": {"type": "array", "items": {"type": "string"},
                            "description": "Specific facts relied on, e.g. 'tick 19 motor speed gap 5.7%'."},
         "suggested_classification": {"type": "string", "enum": CLASSIFICATIONS,
-                                     "description": "Your independent reading of the likely category."},
+                                     "description": ("Your independent reading of the likely category. "
+                                                     "sensor_fault: the reading itself is bad. "
+                                                     "twin_fidelity_loss: twin and reality no longer agree "
+                                                     "within tolerance, cause not asserted. "
+                                                     "operating_outside_envelope: inputs outside validated range. "
+                                                     "unclear: the facts do not support a choice.")},
         "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
         "suggested_investigation": {"type": "string", "description": "What a human could check next."},
         "limitations": {"type": "string", "description": "What the facts cannot tell us."},
@@ -93,9 +110,7 @@ class Generator(Protocol):
 class VertexGemini:
     """Calls Gemini on Vertex AI via the google-genai SDK."""
 
-    def __init__(self, model_id: str = DEFAULT_MODEL, project: str | None = None, location: str = DEFAULT_LOCATION):
-        if not model_id:
-            raise ValueError("set GEMINI_MODEL (or pass model_id) to a pinned Gemini model ID")
+    def __init__(self, model_id: str = PINNED_MODEL, project: str | None = None, location: str = PINNED_LOCATION):
         from google import genai  # imported here so the rest of the package works without it
 
         self.model_id = model_id
@@ -112,6 +127,7 @@ class VertexGemini:
                 temperature=0.0,
                 response_mime_type="application/json",
                 response_json_schema=schema,
+                automatic_function_calling=self._types.AutomaticFunctionCallingConfig(disable=True),
             ),
         )
         return response.text

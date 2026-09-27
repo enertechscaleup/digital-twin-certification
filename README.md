@@ -97,6 +97,45 @@ they are written into the ledger at verification time.
 | `engine/monitor.py` | Field classification, escalation, cascade, anomalies |
 | `engine/run.py` | End-to-end orchestration |
 
+## Phase 2b: Gemini explanations (supplementary)
+
+A separate `explain/` package the engine never imports, so no AI output can
+reach an assurance decision. For each engine event it writes a structured,
+grounded explanation:
+
+- `status_explanation`: why a product twin's status changed, across correlated
+  channels and connected twins.
+- `data_quality_suggestion`: an independent second opinion on a sensor anomaly,
+  for a human to confirm.
+- `impact_narrative`: plain-language impact when the system twin's status
+  changes, traced to the constituent driving it.
+
+Setup (needs Python 3.12, plus `gcloud auth application-default login` once):
+
+```bash
+uv venv --python 3.12 .venv
+uv pip install --python .venv/bin/python --only-binary cryptography -r requirements.txt google-genai
+```
+
+Run on a saved engine run, then verify:
+
+```bash
+.venv/bin/python -m explain run    data/assurance-demo_wear_to_nullified-seed42
+.venv/bin/python -m explain verify data/assurance-demo_wear_to_nullified-seed42
+```
+
+- **Pinned model**: `gemini-3.8-flash` on the Vertex AI `global` endpoint (it is
+  not served from us-central1), temperature 0, JSON-schema output.
+- **Grounded**: facts come only from integrity-checked evidence (the ledger chain
+  plus the readings' checkpoint hashes). Altered evidence is refused.
+- **Supplementary ledger** (`<run>.supplementary.jsonl`): its own hash chain,
+  bound to the core ledger's head hash; every artifact carries the hash of the
+  core entry it explains, the model ID, and hashes of its instructions and facts.
+  The core ledger stays exactly repeatable because AI output lives here instead.
+- **Wording rules**: predictions are same-instant simulations, never forecasts;
+  gaps are classified as `twin_fidelity_loss` without asserting twin defect vs
+  physical change; no safety claims.
+
 ## Cloud Run skeleton
 
 A minimal FastAPI app (`app/main.py`) serving a live view of the generator:

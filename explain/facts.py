@@ -79,8 +79,22 @@ def fact_pack(subject: dict, ledger: list[dict], readings: list[dict], timeline:
     p = subject["payload"]
     tick = p["tick"]
     twin_id = p["twin_id"]
-    prior_anomalies = [e["payload"] for e in ledger
-                       if e["entry_type"] == "anomaly_opened" and e["seq"] < subject["seq"]]
+    closed = {e["payload"]["anomaly_id"]: e["payload"] for e in ledger
+              if e["entry_type"] == "anomaly_closed" and e["seq"] < subject["seq"]}
+    anomaly_history = []
+    for e in ledger:
+        if e["entry_type"] != "anomaly_opened" or e["seq"] >= subject["seq"]:
+            continue
+        a = e["payload"]
+        c = closed.get(a["anomaly_id"])
+        anomaly_history.append({
+            "anomaly_id": a["anomaly_id"], "twin_id": a["twin_id"], "channel_id": a["channel_id"],
+            "type": a["type"], "subtype": a["subtype"], "severity_at_open": a["severity"],
+            "opened_at_tick": a["tick"],
+            "closed_at_tick": c["closed_at_tick"] if c else None,
+            "still_open_at_subject_tick": c is None,
+        })
+    window_start = max(0, tick - WINDOW_TICKS + 1)
     prior_status_events = [{"entry_type": e["entry_type"], **e["payload"]} for e in ledger
                            if e["entry_type"] in ("assurance_status_changed", "assurance_reason_added")
                            and e["seq"] < subject["seq"]]
@@ -91,7 +105,13 @@ def fact_pack(subject: dict, ledger: list[dict], readings: list[dict], timeline:
                     "entry_type": subject["entry_type"], "timestamp": subject["timestamp"], **p},
         "subject_twin_id": twin_id,
         "earlier_status_events": prior_status_events,
-        "earlier_anomalies": prior_anomalies,
+        "anomaly_history": anomaly_history,
+        "readings_window_ticks": [window_start, tick],
         "readings_window": readings_window(readings, timeline, tick),
+        "window_note": (f"readings_window only covers ticks {window_start}-{tick}. For when anything started "
+                        "before that, use anomaly_history (opened_at_tick) and earlier_status_events, "
+                        "never the first tick of the window."),
         "time_note": "Each tick is 2 seconds of stream time; operational_hours is the asset's simulated age.",
+        "prediction_note": ("predicted_value is the twin's simulation of the same instant from that tick's inputs. "
+                            "It is not a forecast of the future."),
     }
