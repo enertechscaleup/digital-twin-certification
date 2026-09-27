@@ -3,7 +3,6 @@
   "description": "One example of each non-wear fault type: an envelope violation on the motor's voltage, then three kinds of sensor data-quality fault.",
   "ticks": 45,
   "operational_hours_per_tick": 24,
-  "holdout_fraction": 0.3,
   "envelope_violations": [
     {"twin_type": "motor", "channel": "volt", "start_tick": 10, "duration_ticks": 5, "value": 440}
   ],

@@ -1,0 +1,7 @@
+{
+  "description": "The compressor system: the motor drives the compressor. The system's own outputs are the compressor's outputs.",
+  "design_system_twin_id": "compressor-system-design",
+  "operational_system_twin_id": "compressor-system-op-001",
+  "constituents": ["motor", "compressor"],
+  "output_constituents": ["compressor"]
+}

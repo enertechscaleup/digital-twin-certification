@@ -3,7 +3,7 @@
 Produces two kinds of synthetic data, for every channel of the motor and
 compressor twins:
 
-* **Bench** data -- a controlled sweep across each twin's certified input
+* **Bench** data -- a controlled sweep across each twin's assured input
   range, as a physical test bench would run before deployment. Used for
   verification and bench validation.
 * **Field** data -- a live operational stream, one reading per channel per
@@ -11,8 +11,8 @@ compressor twins:
   validation, escalation, and recalibration.
 
 Each reading carries the physical reference and the twin prediction side by
-side. The generator never computes gaps or certification status; the
-verification engine does that from these readings.
+side. The generator never computes gaps or assurance status; the assurance
+engine does that from these readings.
 
 Runs are fully reproducible: the same seed, scenario, and start time always
 produce exactly the same data.
@@ -70,7 +70,6 @@ class Reading:
     unit: str
     physical_value: float | None  # None = sensor dropout
     predicted_value: float | None  # None for input channels, or when the twin had no input
-    split: str | None  # field only: "recalibration" | "held_out"
     test_point: int | None  # bench only: which point in the input sweep
     # GROUND TRUTH for testing the engine only: which faults were injected
     # into this reading. The verification engine must never read this field.
@@ -135,7 +134,7 @@ class TelemetryGenerator:
         return self._run_id("bench", twin_type)
 
     def bench_sweep(self, twin_type: str, levels: int = 5, repeats: int = 3) -> Iterator[list[Reading]]:
-        """Step every input across its certified range (``levels`` evenly
+        """Step every input across its assured range (``levels`` evenly
         spaced values each, all combinations), ``repeats`` samples per point.
         Bench inputs are exact setpoints; outputs carry sensor noise."""
         if levels < 2:
@@ -158,12 +157,12 @@ class TelemetryGenerator:
                 true_out = physical.true_outputs(setpoints, wear_pct={})
                 batch = [
                     self._reading(run_id, "bench", sample, None, cfg["design_twin_id"], cfg, c,
-                                  setpoints[c["channel_id"]], None, None, point, [])
+                                  setpoints[c["channel_id"]], None, point, [])
                     for c in inputs
                 ] + [
                     self._reading(run_id, "bench", sample, None, cfg["design_twin_id"], cfg, c,
                                   physical.sense(true_out[c["channel_id"]]), predicted[c["channel_id"]],
-                                  None, point, [])
+                                  point, [])
                     for c in outputs
                 ]
                 sample += 1
@@ -179,14 +178,12 @@ class TelemetryGenerator:
         run_id = self.field_run_id(scenario)
         hours_per_tick = scenario.operational_hours_per_tick or self.tick_seconds / 3600
         profile_rng = self._rng("field-profile")
-        split_rng = self._rng("field-split")
+        envelope_rng = self._rng("field-envelope")
         physical = {t: PhysicalModel(self.configs[t], self._rng(f"field-noise:{t}")) for t in TWIN_ORDER}
         last_reported: dict[tuple[str, str], float | None] = {}
 
         for tick in range(scenario.ticks):
             hours = tick * hours_per_tick
-            # One split tag per tick, so each side gets complete snapshots.
-            split = "held_out" if split_rng.random() < scenario.holdout_fraction else "recalibration"
             true_outputs: dict[str, dict[str, float]] = {}
             batch: list[Reading] = []
 
@@ -214,7 +211,9 @@ class TelemetryGenerator:
                         )
                     for ev in scenario.envelope_violations:
                         if ev.twin_type == twin_type and ev.channel == ch and ev.active(tick):
-                            true_in[ch] = ev.value
+                            # Real operation is never perfectly steady: jitter around the forced value.
+                            jitter = cfg.get("operating_profile", {}).get(ch, {}).get("jitter", ev.value * cfg["physical_noise_pct"] / 100)
+                            true_in[ch] = ev.value + envelope_rng.gauss(0, jitter)
                             faults[ch].append(ev.label())
                             for o in outputs:
                                 faults[o["channel_id"]].append(f"{ev.label()}:{ch}")
@@ -249,12 +248,12 @@ class TelemetryGenerator:
                     ch = c["channel_id"]
                     batch.append(
                         self._reading(run_id, "field", tick, hours, cfg["operational_twin_id"], cfg, c,
-                                      measured[ch], predicted.get(ch), split, None, faults[ch])
+                                      measured[ch], predicted.get(ch), None, faults[ch])
                     )
             yield batch
 
     def _reading(self, run_id, kind, tick, hours, twin_id, cfg, channel, physical_value, predicted_value,
-                 split, test_point, faults) -> Reading:
+                 test_point, faults) -> Reading:
         return Reading(
             run_id=run_id,
             kind=kind,
@@ -269,7 +268,6 @@ class TelemetryGenerator:
             unit=channel["unit"],
             physical_value=_round(physical_value),
             predicted_value=_round(predicted_value),
-            split=split,
             test_point=test_point,
             injected_faults=list(faults),
         )

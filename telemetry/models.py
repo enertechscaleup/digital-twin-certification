@@ -6,11 +6,11 @@ Every machine is described twice:
   the *measured* inputs it is fed.
 * ``PhysicalModel`` -- the "real" machine. The same formula, driven by the
   *true* operating condition, plus a small fixed bias (no twin is perfect),
-  wear, extra divergence when operated outside its certified envelope, and
+  wear, extra divergence when operated outside its assured envelope, and
   random sensor noise.
 
 The formulas are illustrative only and make no engineering claim. The platform
-is domain-agnostic: it certifies the gap between these two, not the physics.
+is domain-agnostic: it assures the gap between these two, not the physics.
 """
 
 from __future__ import annotations
@@ -110,7 +110,7 @@ class PhysicalModel:
         return true_value * (1 + self.rng.gauss(0, self.noise_pct / 100))
 
     def _out_of_envelope_divergence_pct(self, true_inputs: Inputs) -> float:
-        """Outside its certified envelope the real machine starts behaving in
+        """Outside its assured envelope the real machine starts behaving in
         ways the twin was never validated for. Grows with how far outside."""
         total = 0.0
         for name, env in self.input_envelopes.items():

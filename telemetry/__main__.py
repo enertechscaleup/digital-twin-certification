@@ -81,7 +81,7 @@ def cmd_field(args: argparse.Namespace) -> None:
         sink.write(batch)
         if not args.quiet:
             first = batch[0]
-            print(f"tick {first.tick:3d}  {first.operational_hours:7.0f}h  {first.split:<13}  {_gap_line(batch)}")
+            print(f"tick {first.tick:3d}  {first.operational_hours:7.0f}h  {_gap_line(batch)}")
     sink.close()
     print(f"-> {args.out / (run_id + '.jsonl')}")
 
@@ -94,7 +94,7 @@ def main() -> None:
     common.add_argument("--out", type=Path, default=Path("data"), help="output folder (default data/)")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    b = sub.add_parser("bench", parents=[common], help="test-bench sweep across the certified input range")
+    b = sub.add_parser("bench", parents=[common], help="test-bench sweep across the assured input range")
     b.add_argument("--twin", choices=[*TWIN_ORDER, "all"], default="all")
     b.add_argument("--levels", type=int, default=5, help="values per input across its range (default 5)")
     b.add_argument("--repeats", type=int, default=3, help="samples per test point (default 3)")

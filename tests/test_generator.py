@@ -36,10 +36,12 @@ class TestReproducibility(unittest.TestCase):
         s = Scenario(name="t", ticks=20)
         self.assertNotEqual([r.physical_value for r in rows(s, 1)], [r.physical_value for r in rows(s, 2)])
 
-    def test_adding_a_fault_does_not_reshuffle_splits(self):
+    def test_adding_a_fault_does_not_reshuffle_unrelated_randomness(self):
+        flow = lambda out: [r.physical_value for r in out if r.channel_id == "flow"]
         plain = rows(Scenario(name="t", ticks=50))
-        faulty = rows(Scenario(name="t", ticks=50, wear=(WearDrift("motor", 5, {"speed": -20}),)))
-        self.assertEqual([r.split for r in plain], [r.split for r in faulty])
+        faulty = rows(Scenario(name="t", ticks=50, wear=(WearDrift("motor", 5, {"speed": -20}),),
+                               envelope_violations=(EnvelopeViolation("motor", "volt", 3, 4, 440),)))
+        self.assertEqual(flow(plain), flow(faulty))
 
 
 class TestFieldStream(unittest.TestCase):
@@ -79,15 +81,6 @@ class TestFieldStream(unittest.TestCase):
             comp = next(r for r in out if r.tick == tick and r.twin_type == "compressor" and r.channel_id == "speed")
             self.assertAlmostEqual(comp.physical_value, motor.physical_value, delta=0.05 * motor.physical_value)
 
-    def test_split_tags_whole_ticks_at_roughly_the_holdout_fraction(self):
-        out = rows(Scenario(name="t", ticks=1000, holdout_fraction=0.3))
-        by_tick = {}
-        for r in out:
-            by_tick.setdefault(r.tick, set()).add(r.split)
-        self.assertTrue(all(len(s) == 1 for s in by_tick.values()))
-        held = sum(1 for s in by_tick.values() if s == {"held_out"}) / len(by_tick)
-        self.assertAlmostEqual(held, 0.3, delta=0.05)
-
     def test_fast_forward_advances_operational_hours(self):
         out = rows(Scenario(name="t", ticks=3, operational_hours_per_tick=24))
         self.assertEqual(sorted({r.operational_hours for r in out}), [0, 24, 48])
@@ -106,9 +99,10 @@ class TestFaults(unittest.TestCase):
     def test_envelope_violation_forces_input_and_is_labelled(self):
         s = Scenario(name="t", ticks=10, envelope_violations=(EnvelopeViolation("motor", "volt", 3, 2, 440),))
         volt = {r.tick: r for r in rows(s) if r.twin_type == "motor" and r.channel_id == "volt"}
-        self.assertEqual(volt[3].physical_value, 440)
+        self.assertAlmostEqual(volt[3].physical_value, 440, delta=6)  # jittered, like a real reading
+        self.assertNotEqual(volt[3].physical_value, volt[4].physical_value)  # never an exact repeat
         self.assertEqual(volt[4].injected_faults, ["envelope_violation"])
-        self.assertNotEqual(volt[5].physical_value, 440)
+        self.assertLess(volt[5].physical_value, 420)
 
     def test_spike_multiplies_reading(self):
         base = rows(Scenario(name="t", ticks=5))

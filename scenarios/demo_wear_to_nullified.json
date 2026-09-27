@@ -3,7 +3,6 @@
   "description": "Motor wears from tick 5, fast-forwarded (1 tick = 24 operational hours). Its speed/vibration gap widens past 5% (Flagged territory) and then past 10% (Nullified territory), inside a 2-minute live run.",
   "ticks": 60,
   "operational_hours_per_tick": 24,
-  "holdout_fraction": 0.3,
   "wear": [
     {"twin_type": "motor", "start_tick": 5, "pct_per_1000_hours": {"speed": -20, "vibration": 20}}
   ]

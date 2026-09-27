@@ -5,12 +5,12 @@
   wear (e.g. one tick = one day of operation) while the live stream still
   ticks every 2 real seconds.
 * ``EnvelopeViolation`` -- the real machine is actually operated outside the
-  certified input range.
+  assured input range.
 * ``DataQualityFault`` -- a sensor misreports (spike, dropout, or stuck). The
   machine itself is fine; only the reading is wrong.
 
 Each injector only changes the synthetic data. None of them computes gaps or
-decides a certification status -- that is the verification engine's job.
+decides an assurance status -- that is the assurance engine's job.
 """
 
 from __future__ import annotations
@@ -89,7 +89,6 @@ class Scenario:
     # Fast-forward knob for wear: how many operational hours each tick
     # represents. None means real time (tick_seconds / 3600).
     operational_hours_per_tick: float | None = None
-    holdout_fraction: float = 0.3
     wear: tuple[WearDrift, ...] = ()
     envelope_violations: tuple[EnvelopeViolation, ...] = ()
     data_quality: tuple[DataQualityFault, ...] = ()
@@ -100,7 +99,6 @@ class Scenario:
             name=d["name"],
             ticks=d["ticks"],
             operational_hours_per_tick=d.get("operational_hours_per_tick"),
-            holdout_fraction=d.get("holdout_fraction", 0.3),
             wear=tuple(WearDrift(**w) for w in d.get("wear", [])),
             envelope_violations=tuple(EnvelopeViolation(**e) for e in d.get("envelope_violations", [])),
             data_quality=tuple(DataQualityFault(**q) for q in d.get("data_quality", [])),
