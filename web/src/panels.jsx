@@ -173,7 +173,7 @@ export function TwinCharts({ meta, view, twinId, tick }) {
 
 /* ---------- Recalibration ---------- */
 
-export function Recalibration({ state }) {
+export function Recalibration({ state, showSystem }) {
   const rec = Object.fromEntries(state.recalibration.map((e) => [e.entry_type, e.payload]))
   const req = rec.recalibration_requested
   if (!req) return null
@@ -201,7 +201,7 @@ export function Recalibration({ state }) {
         {sub && <li><Mark ok /> Owner submitted twin <b>{sub.twin_version}</b>: {sub.method}</li>}
         {hv && <li><Mark ok={hv.passed} /> Held-out validation <b>{hv.passed ? 'PASSED' : 'FAILED'}</b> on {hv.ticks_evaluated} held-out ticks the owner never saw</li>}
         {sup && <li><Mark ok /> <code>{sup.old_assurance_id}</code> superseded by <code>{sup.new_assurance_id}</code>, effective tick {sup.effective_from_tick}. Prior evidence unchanged.</li>}
-        {re && <li><Mark ok={re.result === 'reassured'} /> System twin {re.result === 'reassured' ? 're-assured' : <>not re-assured: blocked by <b>{re.blocked_by.map((b) => `${twinName(b.constituent)} (${b.reasons.map((r) => CAUSES[r.cause] + (r.channel_id ? ` · ${r.channel_id}` : '')).join('; ')})`).join(', ')}</b></>}</li>}
+        {re && showSystem && <li><Mark ok={re.result === 'reassured'} /> System twin {re.result === 'reassured' ? 're-assured' : <>not re-assured: blocked by <b>{re.blocked_by.map((b) => `${twinName(b.constituent)} (${b.reasons.map((r) => CAUSES[r.cause] + (r.channel_id ? ` · ${r.channel_id}` : '')).join('; ')})`).join(', ')}</b></>}</li>}
       </ul>
       {hv && (
         <table className="results" style={{ marginTop: 16 }}>
@@ -328,6 +328,67 @@ export function Verification({ meta, run }) {
       <p className="hint" style={{ marginTop: 6 }}>Source <code>{v.source || meta.evidence_source}</code></p>
       {v.checks && <ul className="checks">{v.checks.map((c) => <li key={c.check}><span className="ok">✓</span> {c.check}</li>)}</ul>}
       <button className="btn" style={{ marginTop: 12 }} onClick={reverify} disabled={busy}>{busy ? 'Checking…' : 'Re-verify now from the evidence bucket'}</button>
+    </div>
+  )
+}
+
+/* ---------- Assistant ---------- */
+
+const SUGGESTIONS = {
+  motor: ['Why is the motor flagged?', 'What does the gap chart show right now?', 'Is the evidence intact?'],
+  system: ['Why is the system twin flagged?', 'Was the recalibrated twin tested on data the owner never saw?',
+    'Draft a short compliance summary up to now.'],
+}
+
+export function Assistant({ run, tick, showSystem }) {
+  const [turns, setTurns] = useState([])
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+
+  async function send(question) {
+    if (!question.trim() || busy) return
+    setBusy(true); setErr(null)
+    const history = turns.slice(-6).flatMap((t) => [{ role: 'user', text: t.q }, { role: 'assistant', text: t.a.answer }])
+    try {
+      const res = await fetch(`/api/runs/${run}/ask`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tick, question, history, motor_only: !showSystem }),
+      })
+      const d = await res.json()
+      if (!res.ok) throw new Error(typeof d.detail === 'string' ? d.detail : 'the question could not be sent')
+      setTurns((t) => [...t, { q: question, a: d }]); setQ('')
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="panel section">
+      <h2>Ask about the evidence</h2>
+      <p className="hint">Gemini answers only from the evidence up to tick {tick}{showSystem ? '' : ', motor only'}, using read-only lookups listed under each answer. It never makes or changes an assurance decision, and answers are not recorded as evidence.</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        {SUGGESTIONS[showSystem ? 'system' : 'motor'].map((s) => (
+          <button key={s} className="btn" onClick={() => send(s)} disabled={busy}>{s}</button>
+        ))}
+      </div>
+      <div className="feed" style={{ maxHeight: 520, marginBottom: 12 }}>
+        {turns.map((t, i) => (
+          <div key={i} style={{ display: 'grid', gap: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 17 }}>{t.q}</div>
+            <div className="ai-card">
+              <div className="ai-label">AI assistant · evidence up to tick {t.a.tick}</div>
+              <div className="body" style={{ whiteSpace: 'pre-wrap', fontSize: 16, color: 'var(--ink)' }}>{t.a.answer}</div>
+              <div className="foot">Grounded in: {t.a.tool_calls.map((c) => c.name.replace('get_', '').replaceAll('_', ' ')).join(', ') || 'no lookups'} · {t.a.model_id}</div>
+            </div>
+          </div>
+        ))}
+        {busy && <div className="hint">Looking through the evidence…</div>}
+      </div>
+      {err && <div className="error" style={{ marginBottom: 8 }}>{err}</div>}
+      <form style={{ display: 'flex', gap: 8 }} onSubmit={(e) => { e.preventDefault(); send(q) }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={800} placeholder="Ask a question about what you see…"
+          style={{ flex: 1, font: 'inherit', padding: '10px 12px', border: '1px solid #cbd5e1', borderRadius: 8 }} />
+        <button className="btn primary" disabled={busy || !q.trim()}>Ask</button>
+      </form>
     </div>
   )
 }

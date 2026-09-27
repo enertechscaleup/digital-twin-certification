@@ -1,8 +1,16 @@
-# Digital Twin Certification
+# TwinEvidence
 
-A domain-agnostic test-bed and governance layer that independently records,
-measures, and assures the gap between a digital twin's simulated behaviour
-and real-world behaviour. Prototype for the Google Cloud AI Builder Cup 2026.
+Independent evidence infrastructure for digital twins. TwinEvidence records,
+measures, and assures the gap between a digital twin's simulated behaviour and
+real-world behaviour: demonstrated predictive fidelity within validated
+operating conditions, backed by a hash-chained evidence ledger. It does not
+certify that the physical system is safe to operate. Prototype for the Google
+Cloud AI Builder Cup 2026.
+
+The repository and Cloud Run service keep the name `digital-twin-certification`
+by design: the build, deployment configuration, service accounts and public URL
+were established under it, and keeping one stable technical name avoids churn
+across infrastructure while the product name lives in the interface.
 
 ## Phase 1: telemetry generator
 
@@ -179,6 +187,20 @@ Cloud Run service. The viewer replays a run at 2 s per tick; each tick fetches
 cd web && npm install && npm run build   # then the FastAPI app serves web/dist
 ```
 
+## Phase 3c: evidence assistant
+
+`POST /api/runs/{run}/ask` answers questions with Gemini (`gemini-3.8-flash`,
+Vertex AI) using read-only function calling (`app/assistant_tools.py`): current
+tick, twin definitions, status and reasons, anomalies, readings, ledger
+entries, recalibration record, AI explanations, and integrity checks. Every
+tool is cut off at the tick on screen and, in the motor-only view, limited to
+the motor. Each answer lists the lookups it was grounded in; answers never
+change an assurance decision and are not recorded as evidence.
+
+Guards: questions up to 800 characters, 6 per minute and 60 per day per
+visitor, 300 per hour per instance, at most 3 instances, capped answer length.
+The runtime account holds `roles/aiplatform.user` for this.
+
 Local development reads `data/` instead (`EVIDENCE_SOURCE=local`, the default):
 
 ```bash
@@ -186,15 +208,16 @@ Local development reads `data/` instead (`EVIDENCE_SOURCE=local`, the default):
 ```
 
 Deploy (builds run as `dtc-builder`, holding only `roles/cloudbuild.builds.builder`;
-the service runs as `dtc-runtime`, which holds no project roles and only
-`roles/storage.objectViewer` on the evidence bucket):
+the service runs as `dtc-runtime`, which holds only `roles/aiplatform.user`
+in the project and `roles/storage.objectViewer` on the evidence bucket):
 
 ```bash
 gcloud run deploy digital-twin-certification --source . --region us-central1 \
   --allow-unauthenticated \
   --service-account=dtc-runtime@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com \
   --build-service-account=projects/project-46053a8a-6324-40f0-ba8/serviceAccounts/dtc-builder@project-46053a8a-6324-40f0-ba8.iam.gserviceaccount.com \
-  --set-env-vars=EVIDENCE_BUCKET=dtc-evidence-ledger-46053a8a
+  --set-env-vars=EVIDENCE_BUCKET=dtc-evidence-ledger-46053a8a,GOOGLE_CLOUD_PROJECT=project-46053a8a-6324-40f0-ba8 \
+  --max-instances=3
 ```
 
 Development dependencies (Gemini, test client): `requirements-dev.txt`.

@@ -42,14 +42,16 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
             tw = twin(p["twin_id"])
             tw.update(assurance_id=p["assurance_id"], status="assured", reasons=[])
             tw["assurance_history"].append({"assurance_id": p["assurance_id"], "issued_at_tick": e["tick"],
+                                            "ledger_seq": e["seq"],
                                             "supersedes": p.get("supersedes"), "twin_version": p.get("twin_version")})
         elif t == "composition_assured":
             tw = twin(p["system_twin_id"])
             tw.update(assurance_id=p["composition_assurance_id"], status="assured", reasons=[])
-            tw["assurance_history"].append({"assurance_id": p["composition_assurance_id"], "issued_at_tick": e["tick"]})
+            tw["assurance_history"].append({"assurance_id": p["composition_assurance_id"], "issued_at_tick": e["tick"],
+                                            "ledger_seq": e["seq"]})
         elif t in STATUS_ENTRIES:
             tw = twin(p["twin_id"])
-            tw["reasons"].extend({**r, "since_tick": p["tick"]} for r in p["new_reasons"])
+            tw["reasons"].extend({**r, "since_tick": p["tick"], "ledger_seq": e["seq"]} for r in p["new_reasons"])
             if t == "assurance_status_changed":
                 tw["status"] = p["to"]
         elif t == "anomaly_opened":

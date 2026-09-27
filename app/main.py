@@ -14,9 +14,12 @@ import time
 from collections import defaultdict, deque
 
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.assistant import AssistantError, GeminiChat, ask as assistant_ask
+from app.assistant_tools import Toolbox
 from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_run
 from app.state import core_upto, explanations_upto, state_at
 from engine.registry import load_registry
@@ -51,6 +54,16 @@ def evidence(run: str) -> RunEvidence:
 
 def _upto(ev: RunEvidence, upto: int | None) -> int:
     return len(ev.timeline) - 1 if upto is None else upto
+
+
+def _rate_limited(store: dict, key: str, limit: int, window_s: float) -> bool:
+    now, calls = time.monotonic(), store[key]
+    while calls and now - calls[0] > window_s:
+        calls.popleft()
+    if len(calls) >= limit:
+        return True
+    calls.append(now)
+    return False
 
 
 def _client(request: Request) -> str:
@@ -162,18 +175,62 @@ def explanations(run: str, upto: int | None = None) -> list[dict]:
 @app.post("/api/runs/{run}/verify")
 def verify(run: str, request: Request) -> dict:
     """Re-fetch every file from the evidence store and re-check it now."""
-    now, calls = time.monotonic(), _verify_calls[_client(request)]
-    while calls and now - calls[0] > 60:
-        calls.popleft()
-    if len(calls) >= VERIFY_LIMIT_PER_MINUTE:
+    if _rate_limited(_verify_calls, _client(request), VERIFY_LIMIT_PER_MINUTE, 60):
         raise HTTPException(429, "too many verification requests; try again in a minute")
-    calls.append(now)
     pin = _pinned(run)
     try:
         fresh = verify_run(store_from_env(), run, pin["title"], pin["core_ledger_head_hash"])
     except EvidenceIntegrityError as exc:
         return {"valid": False, "error": str(exc)}
     return fresh.verification
+
+
+ASK_PER_MINUTE = int(os.environ.get("ASK_PER_MINUTE", "6"))
+ASK_PER_DAY = int(os.environ.get("ASK_PER_DAY", "60"))
+ASK_GLOBAL_PER_HOUR = int(os.environ.get("ASK_GLOBAL_PER_HOUR", "300"))
+_ask_minute: dict[str, deque] = defaultdict(deque)
+_ask_day: dict[str, deque] = defaultdict(deque)
+_ask_global: dict[str, deque] = defaultdict(deque)
+_chat = None
+
+
+def get_chat():
+    global _chat
+    if _chat is None:
+        _chat = GeminiChat()
+    return _chat
+
+
+class Turn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    text: str = Field(max_length=4000)
+
+
+class AskRequest(BaseModel):
+    tick: int = Field(ge=0)
+    question: str = Field(min_length=1, max_length=800)
+    history: list[Turn] = Field(default_factory=list, max_length=8)
+    motor_only: bool = False
+
+
+@app.post("/api/runs/{run}/ask")
+def ask(run: str, body: AskRequest, request: Request) -> dict:
+    """Grounded, read-only Q&A about the evidence up to ``tick``."""
+    who = _client(request)
+    if _rate_limited(_ask_global, "all", ASK_GLOBAL_PER_HOUR, 3600):
+        raise HTTPException(429, "the assistant is busy; please try again later")
+    if _rate_limited(_ask_minute, who, ASK_PER_MINUTE, 60) or _rate_limited(_ask_day, who, ASK_PER_DAY, 86400):
+        raise HTTPException(429, "question limit reached; please wait a little before asking again")
+    ev = evidence(run)
+    toolbox = Toolbox(ev, body.tick, body.motor_only)
+    try:
+        return assistant_ask(get_chat(), toolbox, body.question, [t.model_dump() for t in body.history])
+    except AssistantError as exc:
+        raise HTTPException(502, str(exc))
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(503, "the assistant is unavailable right now")
 
 
 # The built React dashboard: app/static in the container, web/dist in development.
