@@ -32,15 +32,16 @@ function Halo({ children, ...props }) {
 
 // W/H set the drawing size; the chart scales to its container, so a wide
 // chart gets a wider W to keep text the same size on screen.
-export default function Chart({ W = 680, H = 300, xMax, yMin, yMax, series = [], hlines = [], band, vlines = [], shade = [], yLabel, cursor }) {
-  const x = (t) => M.l + ((W - M.l - M.r) * t) / Math.max(xMax, 1)
+export default function Chart({ W = 680, H = 300, xMin = 0, xMax, yMin, yMax, series = [], hlines = [], band, vlines = [], shade = [], yLabel, cursor }) {
+  const x = (t) => M.l + ((W - M.l - M.r) * (t - xMin)) / Math.max(xMax - xMin, 1)
   const y = (v) => H - M.b - ((H - M.t - M.b) * (v - yMin)) / (yMax - yMin || 1)
-  const colW = (W - M.l - M.r) / Math.max(xMax, 1)
+  const colW = (W - M.l - M.r) / Math.max(xMax - xMin, 1)
 
   const paths = series.map((s) => {
     let d = ''
     let pen = false
     for (const [t, v] of s.points) {
+      if (t < xMin) continue
       if (v == null || Number.isNaN(v)) { pen = false; continue }
       d += `${pen ? 'L' : 'M'}${x(t).toFixed(1)},${y(Math.max(yMin, Math.min(yMax, v))).toFixed(1)}`
       pen = true
@@ -66,7 +67,7 @@ export default function Chart({ W = 680, H = 300, xMax, yMin, yMax, series = [],
             <text x={M.l - 10} y={y(v) + 5} textAnchor="end" fontSize="16" fill="#374151">{fmt(v)}</text>
           </g>
         ))}
-        {niceTicks(0, xMax, 8).map((t) => (
+        {niceTicks(xMin, xMax, 8).map((t) => (
           <text key={`x${t}`} x={x(t)} y={H - M.b + 22} textAnchor="middle" fontSize="16" fill="#374151">{t}</text>
         ))}
         <line x1={M.l} x2={W - M.r} y1={H - M.b} y2={H - M.b} stroke="#9ca3af" />
@@ -87,8 +88,8 @@ export default function Chart({ W = 680, H = 300, xMax, yMin, yMax, series = [],
 
         {hlines.map((h) => (
           <g key={`h${h.y}${h.label}`}>
-            <line x1={M.l} x2={W - M.r} y1={y(h.y)} y2={y(h.y)} stroke={h.color} strokeWidth={3} strokeDasharray="10 6" />
-            <Halo x={h.left ? M.l + 8 : W - M.r - 6} y={h.below ? y(h.y) + 24 : y(h.y) - 9} textAnchor={h.left ? 'start' : 'end'}
+            <line x1={h.x0 != null ? x(h.x0) : M.l} x2={W - M.r} y1={y(h.y)} y2={y(h.y)} stroke={h.color} strokeWidth={3} strokeDasharray="10 6" />
+            <Halo x={h.left ? (h.x0 != null ? x(h.x0) : M.l) + 8 : W - M.r - 6} y={h.below ? y(h.y) + 24 : y(h.y) - 9} textAnchor={h.left ? 'start' : 'end'}
               fontSize="20" fontWeight="800" fill={h.color}>{h.label}</Halo>
           </g>
         ))}

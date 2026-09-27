@@ -126,7 +126,7 @@ export default function App() {
       </div>
 
       <Recalibration state={state} showSystem={showSystem} />
-      {showSystem && <Adjustment state={state} />}
+      {showSystem && <Adjustment state={state} view={view} meta={meta} />}
 
       <Assistant run={run} tick={tick} showSystem={showSystem} />
 

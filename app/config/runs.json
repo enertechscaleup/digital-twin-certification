@@ -5,17 +5,17 @@
     {
       "run": "assurance-demo_full_cycle-seed42",
       "title": "Full assurance cycle",
-      "core_ledger_head_hash": "eeb0bdd16d67fb18036068a122ca54cdf023ff9750de20ecad2c74d37a050a38"
+      "core_ledger_head_hash": "ea1d69c18dc76fc4bb1be41e01dbe858ccda452a14a57ed1c22756983b41a3be"
     },
     {
       "run": "assurance-demo_wear_to_nullified-seed42",
       "title": "Wear to nullified",
-      "core_ledger_head_hash": "59744025634cb0b470653138c02939fffe45d6d967f96566522dc39bd5b94a7d"
+      "core_ledger_head_hash": "defe7016d515215eab48fe57ed1ff2d1a1fabcfe02994848e38039d1fe57385a"
     },
     {
       "run": "assurance-faults_showcase-seed42",
       "title": "Fault types showcase",
-      "core_ledger_head_hash": "681f49e9ed6073f471ef907ec43d4db55ca3e54768da4b7afb860b0247ff32af"
+      "core_ledger_head_hash": "cb7081338a887f498178265af8e085997912617460c7c4ebde6c94d488053c62"
     }
   ]
 }
