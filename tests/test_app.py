@@ -148,6 +148,17 @@ class TestDashboardApi(unittest.TestCase):
                          {"name": "Motor", "role": "product", "registry_id": "vendor-a/em-400", "asset_kind": "electric_motor"})
         self.assertEqual(d["system_twin"]["name"], "Compressor system")
 
+    def test_registry_lists_the_owners_declared_interfaces(self):
+        entries = {e["registry_id"]: e for e in self.client.get("/api/registry").json()["entries"]}
+        self.assertEqual(set(entries), {"vendor-a/em-400", "vendor-b/rc-12"})
+        motor = entries["vendor-a/em-400"]
+        cfg = json.loads((ROOT / "telemetry" / "config" / "motor.json").read_text())
+        self.assertEqual(motor["vendor"], cfg["vendor"])
+        self.assertEqual(motor["modes"], [cfg["twin_mode"]])
+        self.assertEqual([(c["id"], c["unit"], c["direction"], c["declared_range"]) for c in motor["channels"]],
+                         [(c["channel_id"], c["unit"], c["direction"], [c["envelope"]["min"], c["envelope"]["max"]]) for c in cfg["channels"]])
+        self.assertEqual(motor["used_by"], ["oil-gas-compressor-train"])
+
     def test_unknown_project(self):
         self.assertEqual(self.client.get("/api/projects/nope").status_code, 404)
 

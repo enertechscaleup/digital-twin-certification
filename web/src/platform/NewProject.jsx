@@ -3,9 +3,10 @@ import { ArrowLeft, ArrowRight, BadgeCheck, Check, Copy, Lock, Plus, Search, Tra
 import { Graph } from './components.jsx'
 import FindConnect from './FindConnect.jsx'
 import { ESCALATION, GAP_METRIC, TWIN_MODES, topology, validate } from './model/projects.js'
-import { connectTwin, registryEntry } from './model/registry.js'
+import { connectTwin, entryLookup, loadRegistry } from './model/registry.js'
 import { removeTwin, slug, uniqueKey } from './model/draft.js'
 import { saveProject } from './model/store.js'
+import { unitLabel } from './api.js'
 const DOMAINS = ['Oil & gas', 'Manufacturing', 'Warehousing & robotics', 'Power & utilities', 'Process industry', 'Other']
 const STEPS = [
   ['Project', 'Name and domain'],
@@ -19,6 +20,8 @@ const LAST = STEPS.length - 1
 const DRAFT_KEY = 'te.draft.v2'
 
 const chan = (name, unit, direction, min, max, tolerance_pct = 5) => ({ id: slug(name), name, unit, direction, assured_range: [min, max], tolerance_pct, monitored: true })
+
+const registryEntry = entryLookup(null)
 
 function example() {
   const packer = connectTwin(registryEntry('vendor-g/cp-30'), 'Case packer', 'case_packer')
@@ -46,6 +49,10 @@ function loadDraft() {
 export default function NewProject() {
   const [p, setP] = useState(loadDraft)
   const [step, setStep] = useState(0)
+  const [registry, setRegistry] = useState(null)
+  const [registryError, setRegistryError] = useState(null)
+  useEffect(() => { loadRegistry().then(setRegistry).catch((e) => setRegistryError(e.message)) }, [])
+  const entryOf = entryLookup(registry)
   useEffect(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(p)) } catch { /* storage unavailable */ } }, [p])
   const issues = validate(p)
   const update = (fn) => setP((prev) => { const next = structuredClone(prev); fn(next); return next })
@@ -78,10 +85,10 @@ export default function NewProject() {
 
         <div style={{ display: 'grid', gap: 22, alignContent: 'start', minWidth: 0 }}>
           {step === 0 && <StepProject p={p} update={update} />}
-          {step === 1 && <FindConnect p={p} update={update} head={<StepHead n={2} title="Find and connect twins">
+          {step === 1 && <FindConnect p={p} update={update} registry={registry} registryError={registryError} entryOf={entryOf} head={<StepHead n={2} title="Find and connect twins">
             Twins are built and owned by their vendors. Browse the registry, select the twin for each part of the system, and connect it. Its declared channels fill in the next step.
           </StepHead>} addManual={() => update((d) => { addManualTwin(d) })} />}
-          {step === 2 && <StepTwins p={p} update={update} onFind={() => go(1)} />}
+          {step === 2 && <StepTwins p={p} update={update} onFind={() => go(1)} entryOf={entryOf} />}
           {step === 3 && <StepGap p={p} update={update} />}
           {step === 4 && <StepComposition p={p} update={update} />}
           {step === 5 && <StepReview p={p} issues={issues} />}
@@ -125,7 +132,7 @@ function StepProject({ p, update }) {
   )
 }
 
-function StepTwins({ p, update, onFind }) {
+function StepTwins({ p, update, onFind, entryOf }) {
   return (
     <>
       <StepHead n={3} title="Twins and their channels">
@@ -133,7 +140,7 @@ function StepTwins({ p, update, onFind }) {
       </StepHead>
       {p.twins.length === 0 && <div className="callout">No twins yet. <button className="text-link" onClick={onFind}>Find and connect twins <ArrowRight size={13} /></button></div>}
       {p.twins.map((t, ti) => {
-        const entry = t.registry_id && registryEntry(t.registry_id)
+        const entry = t.registry_id && entryOf(t.registry_id)
         return (
           <div key={ti} className="twin-block">
             <div className="twin-block-head">
@@ -196,7 +203,7 @@ function LockedChannels({ t, ti, update }) {
                   onChange={(e) => update((d) => { d.twins[ti].channels[ci].monitored = e.target.checked })} /></td>
                 <td><b>{c.name}</b></td>
                 <td><span className={`dir dir-${c.direction}`}>{c.direction}</span></td>
-                <td>{c.unit}</td>
+                <td>{unitLabel(c.unit)}</td>
                 <td className="num muted">{c.declared_range[0]} – {c.declared_range[1]}</td>
                 {[0, 1].map((k) => (
                   <td key={k}><input id={`t${ti}c${ci}-r${k}`} className="input compact num" type="number" value={c.assured_range[k]} disabled={off}
@@ -265,7 +272,7 @@ function StepGap({ p, update }) {
           <tbody>
             {outputs.map(({ t, ti, c, ci }) => (
               <tr key={`${ti}.${ci}`}>
-                <td><b>{t.name} · {c.name}</b><br /><span className="small muted">Measured {c.unit} vs {t.name} twin prediction</span></td>
+                <td><b>{t.name} · {c.name}</b><br /><span className="small muted">Measured {unitLabel(c.unit)} vs {t.name} twin prediction</span></td>
                 <td style={{ width: 110 }}><input id={`g${ti}c${ci}`} className="input compact num" type="number" min="0" step="0.5" value={c.tolerance_pct}
                   onChange={(e) => update((d) => { d.twins[ti].channels[ci].tolerance_pct = Number(e.target.value) })} /></td>
                 <td className="small">gap &gt; {c.tolerance_pct}% for {ESCALATION.flag_after} readings in a row</td>
@@ -290,8 +297,8 @@ function StepGap({ p, update }) {
 }
 
 function StepComposition({ p, update }) {
-  const outs = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'output').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${c.unit})` })))
-  const ins = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'input').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${c.unit})` })))
+  const outs = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'output').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${unitLabel(c.unit)})` })))
+  const ins = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'input').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${unitLabel(c.unit)})` })))
   const conIssues = validate(p).filter((i) => i.includes('→') || i.includes('loop') || i.includes('connection') || i.includes("system's outputs"))
   return (
     <>

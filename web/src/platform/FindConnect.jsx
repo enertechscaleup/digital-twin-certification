@@ -1,12 +1,12 @@
 import { useState } from 'react'
-import { BadgeCheck, Check, Link2, Plus, Trash2, X } from 'lucide-react'
+import { BadgeCheck, Check, FlaskConical, Link2, Plus, Trash2, X } from 'lucide-react'
 import { InputChart } from './components.jsx'
 import { removeTwin, uniqueKey } from './model/draft.js'
-import { REGISTRY, characteristic, connectTwin, registryEntry } from './model/registry.js'
+import { characteristic, connectTwin } from './model/registry.js'
+import { unitLabel } from './api.js'
 import WireframeAsset from '../visual/wireframe/WireframeAsset.jsx'
 
 const DEFAULT_NAME = { electric_motor: 'Motor', compressor: 'Compressor', amr: 'AMR', pick_station: 'Pick station', fleet_dispatcher: 'Fleet dispatcher', conveyor: 'Conveyor', case_packer: 'Case packer' }
-const DOMAINS = ['All', ...new Set(REGISTRY.map((r) => r.domain))]
 
 function suggestName(p, entry) {
   const base = DEFAULT_NAME[entry.asset_kind]
@@ -14,14 +14,17 @@ function suggestName(p, entry) {
   return n || entry.asset_kind === 'amr' ? `${base} ${n + 1}` : base
 }
 
-export default function FindConnect({ p, update, head, addManual }) {
-  const [domain, setDomain] = useState(DOMAINS.includes(p.domain) ? p.domain : 'All')
+export default function FindConnect({ p, update, head, addManual, registry, registryError, entryOf }) {
+  const all = registry || []
+  const DOMAINS = ['All', ...new Set(all.map((r) => r.domain))]
+  const [domain, setDomain] = useState(p.domain)
   const [selected, setSelected] = useState(null)
   const [hover, setHover] = useState(null)
   const [name, setName] = useState('')
   const [justConnected, setJustConnected] = useState(null)
-  const entry = selected && registryEntry(selected)
-  const list = REGISTRY.filter((r) => domain === 'All' || r.domain === domain)
+  const entry = selected && entryOf(selected)
+  const shownDomain = DOMAINS.includes(domain) ? domain : 'All'
+  const list = all.filter((r) => shownDomain === 'All' || r.domain === shownDomain)
 
   const pick = (r) => {
     if (selected === r.registry_id) { setSelected(null); return }
@@ -48,7 +51,7 @@ export default function FindConnect({ p, update, head, addManual }) {
         {p.twins.length === 0 ? <p className="hint panel-pad">None connected yet. Select a twin below and connect it.</p> : (
           <ul className="rule-list panel-pad" style={{ paddingBlock: 2 }}>
             {p.twins.map((t, ti) => {
-              const e = t.registry_id && registryEntry(t.registry_id)
+              const e = t.registry_id && entryOf(t.registry_id)
               return (
                 <li key={t.key} className="slot">
                   {e ? <BadgeCheck size={16} className="ok" /> : <span className="pill pill-flagged" style={{ height: 18 }}>Unregistered</span>}
@@ -63,12 +66,14 @@ export default function FindConnect({ p, update, head, addManual }) {
       </div>
 
       <div className="section-head" style={{ alignItems: 'center' }}>
-        <h3 className="label">Twin registry · {list.length} of {REGISTRY.length}</h3>
+        <h3 className="label">Twin registry · {list.length} of {all.length}</h3>
         <div className="seg" role="group" aria-label="Filter by domain">
-          {DOMAINS.map((d) => <button key={d} aria-pressed={domain === d} onClick={() => setDomain(d)}>{d}</button>)}
+          {DOMAINS.map((d) => <button key={d} aria-pressed={shownDomain === d} onClick={() => setDomain(d)}>{d}</button>)}
         </div>
       </div>
 
+      {registryError && <div className="callout callout-warn">Could not load the registry: {registryError}</div>}
+      {!registry && !registryError && <div className="panel panel-pad muted">Loading the registry…</div>}
       <div className="registry-grid">
         {list.map((r) => {
           const ch = characteristic(r)
@@ -82,23 +87,26 @@ export default function FindConnect({ p, update, head, addManual }) {
               <div className="registry-body">
                 <div className="project-card-top">
                   <span className="project-domain">{r.vendor}</span>
-                  {count > 0 && <span className="chip"><Link2 size={12} /> Connected{count > 1 ? ` ×${count}` : ''}</span>}
+                  <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'end' }}>
+                    {r.real ? <span className="chip"><BadgeCheck size={12} /> Registered twin</span> : <span className="chip"><FlaskConical size={12} /> Preview listing</span>}
+                    {count > 0 && <span className="chip"><Link2 size={12} /> Connected{count > 1 ? ` ×${count}` : ''}</span>}
+                  </span>
                 </div>
                 <h4 className="h3" style={{ fontSize: 19 }}>{r.name}</h4>
                 <p className="hint">{r.summary}</p>
                 <div>
-                  <div className="label" style={{ marginBottom: 2 }}>Characteristic output · {ch.channel.name} ({ch.channel.unit})</div>
+                  <div className="label" style={{ marginBottom: 2 }}>Illustrative output shape · {ch.channel.name} ({unitLabel(ch.channel.unit)})</div>
                   <InputChart rows={ch.rows} tick={ch.ticks - 1} range={ch.channel.declared_range} ticks={ch.ticks} />
                 </div>
                 <div className="interface">
                   {['input', 'output'].map((dir) => (
                     <div key={dir}>
                       <div className="label">{dir === 'input' ? 'Inputs' : 'Outputs'}</div>
-                      <ul>{r.channels.filter((c) => c.direction === dir).map((c) => <li key={c.id}>{c.name} <span className="muted">{c.unit}</span></li>)}</ul>
+                      <ul>{r.channels.filter((c) => c.direction === dir).map((c) => <li key={c.id}>{c.name} <span className="muted">{unitLabel(c.unit)}</span></li>)}</ul>
                     </div>
                   ))}
                 </div>
-                <div className="small muted">{r.registry_id} · modes: {r.modes.map((m) => m.replace('_', '-')).join(', ')}</div>
+                <div className="small muted">{r.registry_id} · {r.modes.length > 1 ? 'modes' : 'mode'}: {r.modes.map((m) => m.replace('_', '-')).join(', ')}{r.used_by ? ` · used by ${r.used_by.length} project${r.used_by.length > 1 ? 's' : ''}` : ''}</div>
               </div>
             </article>
           )

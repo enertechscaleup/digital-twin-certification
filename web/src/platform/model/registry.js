@@ -1,12 +1,16 @@
-// Mock registry of vendor-owned twins. Vendors publish a twin's interface here
-// (its channels and the ranges they validated it for); projects connect to an
-// entry rather than describing a twin themselves. The platform never builds a twin.
-// Vendors and twin names are fictional. Oil & gas and AMR entries match the
-// built-in projects' channels exactly.
+// The twin registry. Vendors publish a twin's interface here (its channels and the
+// ranges they validated it for); projects connect to an entry rather than describing
+// a twin themselves. The platform never builds a twin.
+//
+// Real entries come from /api/registry (read from the twins' own config files).
+// PREVIEW_REGISTRY below is hand-typed: entries with no real twin behind them yet are
+// shown as "Preview listing"; the motor and compressor entries here are replaced by
+// their real counterparts. Vendors and twin names are fictional.
+import { getJson } from '../api.js'
 
 const ch = (id, name, unit, direction, min, max) => ({ id, name, unit, direction, declared_range: [min, max] })
 
-export const REGISTRY = [
+export const PREVIEW_REGISTRY = [
   {
     registry_id: 'vendor-a/em-400', vendor: 'Synthetic vendor A', name: 'EM-400 motor twin', asset_kind: 'electric_motor',
     domain: 'Oil & gas', role: 'product', modes: ['observational', 'semi_autonomous'],
@@ -65,7 +69,23 @@ export const REGISTRY = [
   },
 ]
 
-export const registryEntry = (id) => REGISTRY.find((r) => r.registry_id === id)
+const previewEntry = (id) => PREVIEW_REGISTRY.find((r) => r.registry_id === id)
+
+/** Real entries first, then preview listings for twins not registered for real. */
+export async function loadRegistry() {
+  const { entries } = await getJson('/api/registry')
+  const real = entries.map((e) => ({
+    ...e,
+    real: true,
+    characteristic: previewEntry(e.registry_id)?.characteristic
+      || { channel: e.channels.find((c) => c.direction === 'output').id, shape: 'ramp_hold' },
+  }))
+  const ids = new Set(real.map((e) => e.registry_id))
+  return [...real, ...PREVIEW_REGISTRY.filter((e) => !ids.has(e.registry_id)).map((e) => ({ ...e, real: false }))]
+}
+
+/** Lookup that falls back to the preview listing, so saved drafts still resolve before the API answers. */
+export const entryLookup = (list) => (id) => list?.find((r) => r.registry_id === id) || previewEntry(id)
 
 const SHAPES = {
   ramp_hold: (t) => (t < 12 ? t / 12 : 1) * 0.72 + 0.06 * Math.sin(t / 4),

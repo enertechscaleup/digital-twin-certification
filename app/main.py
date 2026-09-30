@@ -125,6 +125,31 @@ def project_detail(project_id: str) -> dict:
     return _project_detail(_project_or_404(project_id))
 
 
+@app.get("/api/registry")
+def registry() -> dict:
+    """Twins registered on the platform by their owners. Each entry is read from the twin's own
+    config file (never modified), so the interface shown is exactly what the owner declared."""
+    entries: dict[str, dict] = {}
+    for p in list_projects():
+        for tw in p.twins:
+            if not tw.registry_id:
+                continue
+            if tw.registry_id in entries:
+                entries[tw.registry_id]["used_by"].append(p.project_id)
+                continue
+            cfg = tw.config
+            entries[tw.registry_id] = {
+                "registry_id": tw.registry_id, "name": f"{tw.name} twin", "vendor": cfg["vendor"],
+                "asset_kind": tw.asset_kind, "domain": p.domain, "role": tw.role,
+                "summary": cfg.get("description", ""), "modes": [cfg["twin_mode"]],
+                "channels": [{"id": c["channel_id"], "name": c["name"], "unit": c["unit"], "direction": c["direction"],
+                              "declared_range": [c["envelope"]["min"], c["envelope"]["max"]],
+                              "tolerance_pct": c.get("tolerance_pct")} for c in cfg["channels"]],
+                "used_by": [p.project_id],
+            }
+    return {"entries": list(entries.values())}
+
+
 @app.get("/api/projects/{project_id}/runs")
 def project_runs(project_id: str) -> dict:
     _project_or_404(project_id)
