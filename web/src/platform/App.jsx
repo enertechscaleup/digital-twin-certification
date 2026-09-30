@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Wordmark } from './components.jsx'
 import { loadProjects } from './api.js'
-import { OIL_GAS, PREVIEW_PROJECTS } from './model/projects.js'
+import { PREVIEW_PROJECTS } from './model/projects.js'
 import { loadSaved } from './model/store.js'
 import ProjectsView from './ProjectsView.jsx'
 import NewProject from './NewProject.jsx'
 import OperationView from './OperationView.jsx'
+import EvidenceView from './EvidenceView.jsx'
 import CompositionView from './CompositionView.jsx'
 
 // Screens are addressed by a bare hash token, e.g. #projects, #new, #composition,
@@ -26,9 +27,8 @@ export default function App() {
   useEffect(() => { loadProjects().then(setReal).catch((e) => setError(e.message)) }, [])
 
   const realProject = real?.find((p) => p.project_id === route)
-  const project = realProject ? { ...OIL_GAS, interim: true } // operation view is wired to evidence at the next checkpoint
-    : [...PREVIEW_PROJECTS, ...loadSaved()].find((p) => p.project_id === route)
-  const section = project ? 'projects' : route
+  const project = realProject || [...PREVIEW_PROJECTS, ...loadSaved()].find((p) => p.project_id === route)
+  const section = project || (!real && route.includes('-')) ? 'projects' : route
 
   return (
     <>
@@ -45,7 +45,9 @@ export default function App() {
         </div>
       </header>
       <main>
-        {project ? <OperationView key={project.project_id} project={project} />
+        {realProject ? <EvidenceView key={realProject.project_id} project={realProject} />
+          : project ? <OperationView key={project.project_id} project={project} />
+          : !real && !error && route.includes('-') ? <div className="content-width page muted">Loading project…</div>
           : route === 'new' ? <NewProject />
           : route === 'composition' ? <CompositionView real={real} />
           : <ProjectsView real={real} error={error} />}

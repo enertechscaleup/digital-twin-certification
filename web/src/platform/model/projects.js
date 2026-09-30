@@ -1,6 +1,6 @@
-// Project configurations: the single source every platform screen renders from.
-// This is the proposed project schema (to be made real in F1). The oil & gas
-// values mirror telemetry/config/*.json and engine/config/system.json exactly.
+// Platform-wide constants, shared helpers for any project in the screens' shape,
+// and the preview-only AMR project. Real projects come from the evidence API
+// (api.js, toViewProject); their configuration lives in projects/*.json.
 
 export const TWIN_MODES = {
   observational: { label: 'Observational', note: 'Predicts only. Never recommends an action.' },
@@ -20,54 +20,6 @@ export const ESCALATION = { flag_after: 3, nullify_after: 10, nullify_multiple: 
 
 const ch = (id, name, unit, direction, min, max, tolerance_pct = 5) =>
   ({ id, name, unit, direction, assured_range: [min, max], tolerance_pct })
-
-export const OIL_GAS = {
-  project_id: 'oil-gas-compressor-train',
-  name: 'Compressor train',
-  domain: 'Oil & gas',
-  summary: 'An electric motor drives a gas compressor. Two independently owned twins, composed into one system twin.',
-  data: 'mock',
-  gap: { metric: GAP_METRIC.id },
-  twins: [
-    {
-      key: 'motor', name: 'Motor', role: 'product', owner: 'Synthetic vendor A', registry_id: 'vendor-a/em-400', asset_kind: 'electric_motor', twin_mode: 'semi_autonomous',
-      operational_twin_id: 'motor-op-001', design_twin_id: 'motor-design',
-      channels: [
-        ch('volt', 'Supply voltage', 'V', 'input', 380, 420),
-        ch('current', 'Supply current', 'A', 'input', 10, 30),
-        ch('speed', 'Shaft speed', 'rpm', 'output', 1250, 1600),
-        ch('vibration', 'Vibration', 'mm/s', 'output', 1.5, 5.0),
-      ],
-    },
-    {
-      key: 'compressor', name: 'Compressor', role: 'product', owner: 'Synthetic vendor B', registry_id: 'vendor-b/rc-12', asset_kind: 'compressor', twin_mode: 'observational',
-      operational_twin_id: 'compressor-op-001', design_twin_id: 'compressor-design',
-      channels: [
-        ch('speed', 'Drive speed', 'rpm', 'input', 1250, 1600),
-        ch('flow', 'Air flow', 'm³/min', 'input', 8, 16),
-        ch('pressure', 'Outlet pressure', 'bar', 'output', 3.0, 6.5),
-        ch('temperature', 'Outlet temperature', '°C', 'output', 50, 95),
-      ],
-    },
-  ],
-  composition: {
-    system_twin: { name: 'Compressor system', operational_twin_id: 'compressor-system-op-001' },
-    output_constituents: ['compressor'],
-    connections: [
-      { from: ['motor', 'speed'], to: ['compressor', 'speed'], description: "The motor's shaft speed drives the compressor" },
-    ],
-  },
-  runs: [
-    { id: 'full_cycle', name: 'Full cycle', ticks: 80,
-      mock: { fault: { twin: 'motor', channels: { speed: 1, vibration: 0.55 }, start: 12, ramp: 26, cap_pct: 12 },
-              recalibration: { twin: 'motor', at: 60 },
-              adjustment: { twin: 'motor', control: 'volt', objective: ['compressor', 'speed'], recommend: 64, approve: 65, execute: 66, from: 393.6, to: 417.0 } } },
-    { id: 'wear', name: 'Wear to nullified', ticks: 60,
-      mock: { fault: { twin: 'motor', channels: { speed: 1, vibration: 0.55 }, start: 10, ramp: 30, cap_pct: 16 } } },
-    { id: 'faults', name: 'Faults showcase', ticks: 60,
-      mock: { fault: { twin: 'compressor', channels: { pressure: 1 }, start: 30, ramp: 12, cap_pct: 9 } } },
-  ],
-}
 
 // Preview only: AMR has no engine evidence yet, so this project renders from mock data
 // (model/mockRun.js) and is labelled as a preview wherever it appears.

@@ -19,7 +19,7 @@ export default function OperationView({ project }) {
   return <Operating project={project} />
 }
 
-function Header({ project, children, onConfig }) {
+export function Header({ project, children, onConfig, sub }) {
   return (
     <div className="page-head">
       <nav className="crumbs" aria-label="Breadcrumb"><a href="#projects">Projects</a><span>/</span><span>{project.name}</span></nav>
@@ -30,6 +30,8 @@ function Header({ project, children, onConfig }) {
             <span className="sep" />{project.twins.length} twins<span className="sep" />{channelCount(project)} channels
           </p>
           <h1 className="display display-l">{project.name}</h1>
+          {sub && <p className="small muted" style={{ margin: 0 }}>{sub}</p>}
+          {project.preview && <span className="chip" style={{ justifySelf: 'start' }}>Preview · mock data, not evidence</span>}
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
           {children}
@@ -80,7 +82,6 @@ function Operating({ project }) {
         </Header>
       </div>
 
-      {project.interim && <div className="content-width" style={{ paddingTop: 14 }}><div className="callout callout-warn">Interim: this replay still shows mock data. It is wired to the verified evidence at the next F3 checkpoint.</div></div>}
       <div className="replay">
         <div className="content-width replay-inner">
           <button className="icon-button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause replay' : 'Play replay'}>

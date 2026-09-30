@@ -194,3 +194,61 @@ export function ConfigDrawer({ project, focusKey, onClose }) {
     </>
   )
 }
+
+/**
+ * Evidence chart: fixed axes for the whole run, series cut at the tick on screen,
+ * reference lines, status-change markers and shaded ticks (e.g. not evaluated).
+ * series: [{ points: [[tick, value|null]], color, dashed, width }]
+ * hlines: [{ y, label, color, dash, x0 }]   markers: [{ x, color, label }]   shade: [tick]
+ */
+export function TraceChart({ W = 340, H = 128, xMin = 0, xMax, yMin, yMax, series = [], band, hlines = [], markers = [], shade = [], cursor, digits = 0 }) {
+  const L = 40, R = 8, T = 10, B = 16
+  const x = (t) => L + ((W - L - R) * (t - xMin)) / Math.max(1, xMax - xMin)
+  const y = (v) => T + (H - T - B) * (1 - (v - yMin) / (yMax - yMin || 1))
+  const clampY = (v) => Math.max(T, Math.min(H - B, y(v)))
+  const step = (W - L - R) / Math.max(1, xMax - xMin)
+  const paths = series.map((s) => {
+    const segs = []
+    let cur = []
+    for (const [t, v] of s.points) {
+      if (t < xMin) continue
+      if (v == null || Number.isNaN(v)) { if (cur.length) segs.push(cur); cur = []; continue }
+      cur.push(`${x(t).toFixed(1)},${clampY(v).toFixed(1)}`)
+    }
+    if (cur.length) segs.push(cur)
+    return { ...s, segs }
+  })
+  const ticksY = [yMin, (yMin + yMax) / 2, yMax]
+  return (
+    <div className="chart">
+      <svg viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+        {shade.filter((t) => t >= xMin).map((t) => <rect key={`s${t}`} x={x(t) - step / 2} y={T} width={step} height={H - T - B} fill="var(--flagged-bg)" opacity="0.7" />)}
+        {band && <rect x={L} y={clampY(band.max)} width={W - L - R} height={Math.max(0, clampY(band.min) - clampY(band.max))} fill="var(--secondary)" />}
+        {ticksY.map((v, i) => (
+          <g key={i}>
+            <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="var(--rule)" strokeWidth="1" />
+            <text x={L - 5} y={y(v) + 3} textAnchor="end">{fmt(v, digits)}</text>
+          </g>
+        ))}
+        {markers.filter((m) => m.x >= xMin).map((m, i) => (
+          <g key={`m${i}`}>
+            <line x1={x(m.x)} x2={x(m.x)} y1={T} y2={H - B} stroke={m.color} strokeWidth="1.2" strokeDasharray="2 2" />
+            <title>{m.label}</title>
+          </g>
+        ))}
+        {hlines.map((h, i) => (
+          <g key={`h${i}`}>
+            <line x1={h.x0 != null ? x(h.x0) : L} x2={W - R} y1={clampY(h.y)} y2={clampY(h.y)} stroke={h.color} strokeWidth="1.1" strokeDasharray={h.dash ?? '4 3'} />
+            {h.label && <text x={W - R - 2} y={clampY(h.y) - 3} textAnchor="end" style={{ fill: h.color, fontWeight: 800 }}>{h.label}</text>}
+          </g>
+        ))}
+        {paths.map((s, i) => s.segs.map((seg, j) => (
+          <polyline key={`${i}.${j}`} points={seg.join(' ')} fill="none" stroke={s.color} strokeWidth={s.width || 1.6} strokeDasharray={s.dashed ? '4 3' : undefined} strokeLinejoin="round" />
+        )))}
+        {cursor != null && cursor >= xMin && <line x1={x(cursor)} x2={x(cursor)} y1={T} y2={H - B} stroke="var(--orange)" strokeWidth="1" opacity="0.6" />}
+        <text x={L} y={H - 3}>{xMin}</text>
+        <text x={W - R} y={H - 3} textAnchor="end">{xMax}</text>
+      </svg>
+    </div>
+  )
+}
