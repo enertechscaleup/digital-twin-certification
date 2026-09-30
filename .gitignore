@@ -7,4 +7,3 @@ __pycache__/
 .npm-cache/
 web/node_modules/
 web/dist/
-web/dist-platform

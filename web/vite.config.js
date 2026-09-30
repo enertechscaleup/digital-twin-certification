@@ -6,5 +6,10 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: { port: 5173, proxy: { '/api': 'http://localhost:8000', '/health': 'http://localhost:8000' } },
-  build: { outDir: 'dist', emptyOutDir: true },
+  // Two pages: the platform at / and the original dashboard at /legacy/ (kept for the
+  // side-by-side parity check until the platform replaces it).
+  build: {
+    outDir: 'dist', emptyOutDir: true, chunkSizeWarningLimit: 1200,
+    rollupOptions: { input: { main: 'index.html', legacy: 'legacy/index.html' } },
+  },
 })

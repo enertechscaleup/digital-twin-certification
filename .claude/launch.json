@@ -16,8 +16,6 @@
       "runtimeExecutable": "web/node_modules/.bin/vite",
       "runtimeArgs": [
         "web",
-        "--config",
-        "web/vite.platform.config.js",
         "--port",
         "5174",
         "--strictPort"
