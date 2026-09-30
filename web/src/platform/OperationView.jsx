@@ -80,6 +80,7 @@ function Operating({ project }) {
         </Header>
       </div>
 
+      {project.interim && <div className="content-width" style={{ paddingTop: 14 }}><div className="callout callout-warn">Interim: this replay still shows mock data. It is wired to the verified evidence at the next F3 checkpoint.</div></div>}
       <div className="replay">
         <div className="content-width replay-inner">
           <button className="icon-button" onClick={() => setPlaying((p) => !p)} aria-label={playing ? 'Pause replay' : 'Play replay'}>

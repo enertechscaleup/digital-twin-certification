@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Wordmark } from './components.jsx'
-import { BUILT_IN } from './model/projects.js'
+import { loadProjects } from './api.js'
+import { OIL_GAS, PREVIEW_PROJECTS } from './model/projects.js'
 import { loadSaved } from './model/store.js'
 import ProjectsView from './ProjectsView.jsx'
 import NewProject from './NewProject.jsx'
@@ -8,7 +9,7 @@ import OperationView from './OperationView.jsx'
 import CompositionView from './CompositionView.jsx'
 
 // Screens are addressed by a bare hash token, e.g. #projects, #new, #composition,
-// #oil-gas-compressor-train. Real paths replace this in F3.
+// #oil-gas-compressor-train.
 const readRoute = () => (window.location.hash || '#projects').slice(1) || 'projects'
 
 export default function App() {
@@ -19,12 +20,19 @@ export default function App() {
     return () => window.removeEventListener('hashchange', on)
   }, [])
 
-  const project = [...BUILT_IN, ...loadSaved()].find((p) => p.project_id === route)
+  // Real projects come from the evidence API; preview projects are mock data, labelled as such.
+  const [real, setReal] = useState(null)
+  const [error, setError] = useState(null)
+  useEffect(() => { loadProjects().then(setReal).catch((e) => setError(e.message)) }, [])
+
+  const realProject = real?.find((p) => p.project_id === route)
+  const project = realProject ? { ...OIL_GAS, interim: true } // operation view is wired to evidence at the next checkpoint
+    : [...PREVIEW_PROJECTS, ...loadSaved()].find((p) => p.project_id === route)
   const section = project ? 'projects' : route
 
   return (
     <>
-      <div className="preview-ribbon"><b>Design preview</b> · mock data for layout review · not evidence</div>
+      <div className="preview-ribbon"><b>In development</b> · projects marked preview use mock data, not evidence</div>
       <header className="topbar">
         <div className="topbar-inner">
           <Wordmark />
@@ -39,8 +47,8 @@ export default function App() {
       <main>
         {project ? <OperationView key={project.project_id} project={project} />
           : route === 'new' ? <NewProject />
-          : route === 'composition' ? <CompositionView />
-          : <ProjectsView />}
+          : route === 'composition' ? <CompositionView real={real} />
+          : <ProjectsView real={real} error={error} />}
       </main>
       <footer className="footer">
         <div className="content-width footer-row">

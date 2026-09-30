@@ -141,6 +141,13 @@ class TestDashboardApi(unittest.TestCase):
         self.assertIn("compressor-op-001", d["twins"])
         self.assertEqual(d["system_twin"]["twin_id"], "compressor-system-op-001")
 
+    def test_project_detail_carries_display_fields_in_processing_order(self):
+        d = self.client.get("/api/projects/oil-gas-compressor-train").json()
+        self.assertEqual(list(d["twins"]), ["motor-op-001", "compressor-op-001"])
+        self.assertEqual({k: d["twins"]["motor-op-001"][k] for k in ("name", "role", "registry_id", "asset_kind")},
+                         {"name": "Motor", "role": "product", "registry_id": "vendor-a/em-400", "asset_kind": "electric_motor"})
+        self.assertEqual(d["system_twin"]["name"], "Compressor system")
+
     def test_unknown_project(self):
         self.assertEqual(self.client.get("/api/projects/nope").status_code, 404)
 

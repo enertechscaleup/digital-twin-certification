@@ -59,10 +59,12 @@ def _project_detail(p) -> dict:
         **_project_summary(p),
         "gap_metric": p.gap_metric,
         "entry_twins": [reg.products[t].operational_twin_id for t in p.entry_twins],
+        # Twins below are in processing order (feeding twins first); display fields come from the project file.
         "twins": {
             tw.operational_twin_id: {
                 "twin_type": tw.twin_type, "design_twin_id": tw.design_twin_id, "vendor": tw.vendor,
-                "twin_mode": tw.twin_mode,
+                "twin_mode": tw.twin_mode, "name": p.twin(tw.twin_type).name, "role": p.twin(tw.twin_type).role,
+                "registry_id": p.twin(tw.twin_type).registry_id, "asset_kind": p.twin(tw.twin_type).asset_kind,
                 "channels": [{"channel_id": c.channel_id, "name": c.name, "unit": c.unit, "direction": c.direction,
                               "envelope": [c.env_min, c.env_max], "tolerance_pct": c.tolerance_pct}
                              for c in tw.channels],
@@ -70,6 +72,7 @@ def _project_detail(p) -> dict:
         },
         "system_twin": {
             "twin_id": reg.system.operational_system_twin_id,
+            "name": p.system_name,
             "constituents": [reg.products[t].operational_twin_id for t in reg.system.constituents],
             "outputs_come_from": [reg.products[t].operational_twin_id for t in reg.system.output_constituents],
             "connections": list(reg.system.connections),

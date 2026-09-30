@@ -69,8 +69,11 @@ export const OIL_GAS = {
   ],
 }
 
+// Preview only: AMR has no engine evidence yet, so this project renders from mock data
+// (model/mockRun.js) and is labelled as a preview wherever it appears.
 export const AMR = {
   project_id: 'amr-fulfilment-cell',
+  preview: true,
   name: 'Fulfilment cell',
   domain: 'Warehousing & robotics',
   summary: 'A fleet dispatcher assigns tasks to two autonomous mobile robots, which deliver totes to one pick station.',
@@ -124,7 +127,7 @@ export const AMR = {
   ],
 }
 
-export const BUILT_IN = [OIL_GAS, AMR]
+export const PREVIEW_PROJECTS = [AMR]
 
 // -- helpers shared by every screen ------------------------------------
 

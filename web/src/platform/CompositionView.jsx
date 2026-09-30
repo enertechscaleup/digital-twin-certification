@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { Graph, StatusPill } from './components.jsx'
-import { AMR, OIL_GAS, topology, twinByKey } from './model/projects.js'
+import { FlaskConical } from 'lucide-react'
+import { AMR, topology, twinByKey } from './model/projects.js'
 
 const NEXT = { assured: 'flagged', flagged: 'nullified', nullified: 'assured' }
 const RANK = { assured: 0, flagged: 1, nullified: 2 }
@@ -21,7 +22,7 @@ function systemLevel(project, lv) {
   return { level, why }
 }
 
-function Pattern({ project, index, blurb }) {
+function Pattern({ project, index, blurb, preview }) {
   const initial = Object.fromEntries(project.twins.map((t) => [t.key, 'assured']))
   const [lv, setLv] = useState(initial)
   const sys = systemLevel(project, lv)
@@ -36,6 +37,7 @@ function Pattern({ project, index, blurb }) {
           <button className="text-link" onClick={() => setLv(initial)}><RotateCcw size={13} /> Reset</button>
         </div>
         <p className="hint">{blurb}</p>
+        {preview && <span className="chip" style={{ justifySelf: 'start' }}><FlaskConical size={12} /> Preview · mock project, no evidence yet</span>}
       </div>
       <div className="panel-pad"><Graph project={project} levels={levels} onPick={(k) => setLv({ ...lv, [k]: NEXT[lv[k]] })} /></div>
       <div className="panel-pad" style={{ display: 'grid', gap: 12, borderTop: '1px solid var(--rule)' }}>
@@ -63,7 +65,8 @@ function Pattern({ project, index, blurb }) {
   )
 }
 
-export default function CompositionView() {
+export default function CompositionView({ real }) {
+  const oilGas = real?.find((p) => p.project_id === 'oil-gas-compressor-train')
   return (
     <div className="content-width page">
       <div className="page-head">
@@ -85,8 +88,9 @@ export default function CompositionView() {
           <span>Arrows run from an output channel to the input it feeds</span>
         </div>
         <div className="compare">
-          <Pattern project={OIL_GAS} index="Pattern A" blurb="The motor's shaft speed is the compressor's drive speed. No coordinating controller: each twin feeds the next." />
-          <Pattern project={AMR} index="Pattern B" blurb="A dispatcher assigns tasks to two robots working side by side; both deliver to one pick station." />
+          {oilGas ? <Pattern project={oilGas} index="Pattern A" blurb="The motor's shaft speed is the compressor's drive speed. No coordinating controller: each twin feeds the next." />
+            : <div className="panel panel-pad muted">Loading the compressor train…</div>}
+          <Pattern project={AMR} index="Pattern B" preview blurb="A dispatcher assigns tasks to two robots working side by side; both deliver to one pick station." />
         </div>
       </section>
 

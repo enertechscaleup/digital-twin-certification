@@ -1,26 +1,42 @@
-import { ArrowUpRight, Plus } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowUpRight, FlaskConical, Plus, ShieldCheck } from 'lucide-react'
+import { finalLevels } from './api.js'
 import { Graph, StatusPill } from './components.jsx'
-import { BUILT_IN, channelCount, topology } from './model/projects.js'
+import { PREVIEW_PROJECTS, channelCount, topology } from './model/projects.js'
 import { mockRun } from './model/mockRun.js'
 import { loadSaved } from './model/store.js'
 
-function latest(project) {
+function mockLatest(project) {
   const run = project.runs[0]
   const r = mockRun(project, run)
   const snap = r.snapshots[r.snapshots.length - 1].twins
   const levels = Object.fromEntries(project.twins.map((t) => [t.operational_twin_id, snap[t.key].level]))
   levels[r.sysId] = snap[r.sysId].level
-  return { run, levels, system: snap[r.sysId].level }
+  return { run, levels, system: snap[r.sysId].level, ticks: run.ticks }
+}
+
+/** Final statuses of a project's first run: from the engine's evidence, or from mock data for a preview. */
+function useLatest(project) {
+  const pending = project.status === 'awaiting_telemetry'
+  const [real, setReal] = useState(null)
+  useEffect(() => {
+    if (pending || project.preview || !project.runs.length) return
+    let live = true
+    finalLevels(project, project.runs[0]).then((l) => live && setReal({ ...l, run: project.runs[0] })).catch(() => {})
+    return () => { live = false }
+  }, [project, pending])
+  if (pending) return null
+  return project.preview ? mockLatest(project) : real
 }
 
 function ProjectCard({ project }) {
   const pending = project.status === 'awaiting_telemetry'
-  const l = pending ? null : latest(project)
+  const l = useLatest(project)
   return (
     <a className="project-card" href={`#${project.project_id}`}>
       <div className="project-card-top">
         <span className="project-domain">{project.domain}</span>
-        <StatusPill level={pending ? 'pending' : l.system} />
+        {pending ? <StatusPill level="pending" /> : l ? <StatusPill level={l.system} /> : <span className="small muted">Verifying…</span>}
       </div>
       <div style={{ display: 'grid', gap: 8 }}>
         <h2 className="h3">{project.name}</h2>
@@ -35,15 +51,20 @@ function ProjectCard({ project }) {
         </div>
         <span className="text-link">{pending ? 'View setup' : 'Open project'} <ArrowUpRight size={15} strokeWidth={1.8} /></span>
       </div>
-      <div className="small muted">
-        {pending ? 'Awaiting twin registration and telemetry' : `Latest run: ${l.run.name} · ${l.run.ticks} ticks · system ${l.system}`}
+      <div className="small muted" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {project.preview
+          ? <span className="chip"><FlaskConical size={12} /> Preview · mock data</span>
+          : !pending && <span className="chip"><ShieldCheck size={12} /> Verified evidence · {project.runs.length} runs</span>}
+        {pending ? 'Awaiting twin registration and telemetry'
+          : l ? `Latest run: ${l.run.name} · ${l.ticks} ticks · system ${l.system}` : ''}
       </div>
     </a>
   )
 }
 
-export default function ProjectsView() {
+export default function ProjectsView({ real, error }) {
   const saved = loadSaved()
+  const shown = [...(real || []), ...PREVIEW_PROJECTS]
   return (
     <div className="content-width page">
       <div className="page-head">
@@ -59,11 +80,13 @@ export default function ProjectsView() {
 
       <section className="section" aria-labelledby="proj-h">
         <div className="section-head">
-          <h2 id="proj-h" className="label">{BUILT_IN.length + saved.length} projects</h2>
+          <h2 id="proj-h" className="label">{shown.length + saved.length} projects</h2>
           <a className="text-link" href="#composition">How twins compose <ArrowUpRight size={15} strokeWidth={1.8} /></a>
         </div>
         <div className="project-grid">
-          {BUILT_IN.map((p) => <ProjectCard key={p.project_id} project={p} />)}
+          {error && <div className="callout callout-warn">Could not load projects: {error}</div>}
+          {!real && !error && <div className="panel panel-pad muted">Loading projects…</div>}
+          {shown.map((p) => <ProjectCard key={p.project_id} project={p} />)}
           {saved.map((p) => <ProjectCard key={p.project_id} project={p} />)}
           <a className="new-card" href="#new">
             <span className="plus"><Plus size={20} /></span>
