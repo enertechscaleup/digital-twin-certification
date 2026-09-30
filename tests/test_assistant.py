@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import app.main as main
 from app.assistant import AssistantError, ask
 from app.assistant_tools import Toolbox, ToolError
+from projects import load_project
 from app.evidence import verify_run, LocalStore
 from tests.test_app import RUN, build_pack
 
@@ -74,6 +75,14 @@ class TestAssistant(unittest.TestCase):
         self.assertTrue(all(a["twin_id"] == "motor-op-001" for a in tb.get_anomalies()["anomalies"]))
         steps = tb.get_recalibration()["steps"]
         self.assertNotIn("composition_reassessment", [s["entry_type"] for s in steps])
+
+    def test_solo_view_is_derived_from_the_projects_own_entry_twins_not_a_hardcoded_id(self):
+        # Same result as the motor-only test above, but proving it comes from the project's
+        # connections (via an explicitly passed project), not a fixed set of ids in the code.
+        project = load_project()
+        tb = Toolbox(self.ev, 70, motor_only=True, project=project)
+        self.assertEqual(tb._solo_ids, {"motor-op-001"})
+        self.assertEqual(set(tb.get_status()["twins"]), {"motor-op-001"})
 
     def test_unknown_tool_and_bad_arguments_are_refused(self):
         tb = Toolbox(self.ev, 10, motor_only=False)

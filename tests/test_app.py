@@ -122,6 +122,36 @@ class TestDashboardApi(unittest.TestCase):
     def test_unknown_run(self):
         self.assertEqual(self.client.get("/api/runs/nope/meta").status_code, 404)
 
+    def test_meta_reports_the_projects_own_twins(self):
+        m = self.client.get(f"/api/runs/{RUN}/meta").json()
+        self.assertEqual(m["project_id"], "oil-gas-compressor-train")
+        self.assertEqual(m["entry_twins"], ["motor-op-001"])
+        self.assertIn("motor-op-001", m["twins"])
+        self.assertIn("compressor-op-001", m["twins"])
+
+    def test_lists_projects(self):
+        ps = self.client.get("/api/projects").json()["projects"]
+        ids = [p["project_id"] for p in ps]
+        self.assertIn("oil-gas-compressor-train", ids)
+
+    def test_project_detail(self):
+        d = self.client.get("/api/projects/oil-gas-compressor-train").json()
+        self.assertEqual(d["name"], "Compressor train")
+        self.assertEqual(d["entry_twins"], ["motor-op-001"])
+        self.assertIn("compressor-op-001", d["twins"])
+        self.assertEqual(d["system_twin"]["twin_id"], "compressor-system-op-001")
+
+    def test_unknown_project(self):
+        self.assertEqual(self.client.get("/api/projects/nope").status_code, 404)
+
+    def test_runs_filtered_by_project(self):
+        all_runs = self.client.get("/api/runs").json()["runs"]
+        self.assertTrue(all(r["project_id"] == "oil-gas-compressor-train" for r in all_runs))
+        scoped = self.client.get("/api/projects/oil-gas-compressor-train/runs").json()["runs"]
+        self.assertEqual({r["run"] for r in scoped}, {r["run"] for r in all_runs})
+        self.assertEqual(self.client.get("/api/runs", params={"project_id": "nope"}).json()["runs"], [])
+        self.assertEqual(self.client.get("/api/projects/nope/runs").status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

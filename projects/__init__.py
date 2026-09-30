@@ -76,6 +76,23 @@ class Project:
         return {c["to_channel"]: {"from_twin": c["from_twin"], "from_channel": c["from_channel"]}
                 for c in self.connections if c["to_twin"] == twin_type}
 
+    @property
+    def entry_twins(self) -> tuple[str, ...]:
+        """Twins with no incoming connection: visible and meaningful on their own, before the rest
+        of the project is connected (e.g. the motor before the compressor is registered)."""
+        fed = {c["to_twin"] for c in self.connections}
+        return tuple(t.twin_type for t in self.twins if t.twin_type not in fed)
+
+
+def list_projects(directory: Path = PROJECTS_DIR) -> list[Project]:
+    """Every project file in ``directory``, loaded and checked, sorted by project id."""
+    projects = [load_project(f) for f in sorted(directory.glob("*.json"))]
+    return sorted(projects, key=lambda p: p.project_id)
+
+
+def find_project(project_id: str, directory: Path = PROJECTS_DIR) -> Project | None:
+    return next((p for p in list_projects(directory) if p.project_id == project_id), None)
+
 
 def load_project(path: Path | str = DEFAULT_PROJECT) -> Project:
     path = Path(path)

@@ -1,8 +1,10 @@
 """The assistant's tools: read-only views of verified evidence.
 
 Every tool is cut off at the tick on screen, and -- in the dashboard's
-motor-only opening view -- limited to the motor, so the assistant can never
-say more than the viewer could see. None of them can change anything.
+solo opening view -- limited to the project's entry twins (those nothing
+else feeds, e.g. the motor before the compressor is registered), so the
+assistant can never say more than the viewer could see. None of them can
+change anything.
 """
 
 from __future__ import annotations
@@ -10,8 +12,8 @@ from __future__ import annotations
 from app.evidence import RunEvidence
 from app.state import core_upto, explanations_upto, state_at
 from engine.registry import load_registry
+from projects import Project, load_project
 
-MOTOR_ONLY = {"motor-op-001", "motor-design"}
 MAX_READING_TICKS = 40
 MAX_LEDGER_ENTRIES = 25
 
@@ -21,13 +23,18 @@ class ToolError(Exception):
 
 
 class Toolbox:
-    def __init__(self, ev: RunEvidence, tick: int, motor_only: bool):
+    def __init__(self, ev: RunEvidence, tick: int, motor_only: bool, project: Project | None = None):
         self.ev = ev
         self.tick = max(0, min(tick, len(ev.timeline) - 1))
         self.motor_only = motor_only
+        self.project = project or load_project()
+        reg = load_registry(self.project)
+        # The twins visible before the rest of the project is connected: those the project's own
+        # connections don't feed. Replaces the old, oil & gas-only hardcoded MOTOR_ONLY set.
+        self._solo_ids = {reg.products[t].operational_twin_id for t in self.project.entry_twins}
 
     def _visible(self, twin_id: str | None) -> bool:
-        return not self.motor_only or twin_id is None or twin_id in MOTOR_ONLY
+        return not self.motor_only or twin_id is None or twin_id in self._solo_ids
 
     def _entry_visible(self, e: dict) -> bool:
         p = e["payload"]
@@ -40,11 +47,11 @@ class Toolbox:
         state = state_at(self.ev, self.tick)
         hours = next((r["operational_hours"] for r in reversed(self.ev.readings) if r["tick"] == self.tick), None)
         return {"tick": self.tick, "last_tick_in_run": len(self.ev.timeline) - 1, "timestamp": state["timestamp"],
-                "operational_hours": hours, "view": "motor only" if self.motor_only else "motor, compressor and system twin",
+                "operational_hours": hours, "view": "single twin" if self.motor_only else "full system",
                 "note": "Evidence after this tick is not available to you."}
 
     def get_twin_definitions(self) -> dict:
-        reg = load_registry()
+        reg = load_registry(self.project)
         started = next(e["payload"] for e in self.ev.core if e["entry_type"] == "run_started")
         twins = {
             p.operational_twin_id: {
@@ -117,7 +124,7 @@ class Toolbox:
 
     def get_adjustment_episode(self) -> dict:
         if self.motor_only:
-            return {"note": "Adjustment episodes involve the connected compressor; they are not visible in the motor-only view."}
+            return {"note": "Adjustment episodes involve twins connected downstream; they are not visible in the solo view."}
         steps = state_at(self.ev, self.tick)["adjustment"]
         return {"tick": self.tick, "steps": [{**s, "payload": _trim(s["payload"])} for s in steps],
                 "note": "Empty if no semi-autonomous adjustment has happened by this tick."}

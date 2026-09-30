@@ -24,6 +24,7 @@ from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_r
 from app.state import core_upto, explanations_upto, state_at
 from engine.registry import load_registry
 from explain.facts import EvidenceIntegrityError
+from projects import ProjectError, find_project, list_projects
 
 app = FastAPI(title="TwinEvidence")
 
@@ -39,6 +40,41 @@ def _pinned(run: str) -> dict:
         if r["run"] == run:
             return r
     raise HTTPException(404, f"unknown run {run!r}")
+
+
+def _project_or_404(project_id: str):
+    project = find_project(project_id)
+    if project is None:
+        raise HTTPException(404, f"unknown project {project_id!r}")
+    return project
+
+
+def _project_summary(p) -> dict:
+    return {"project_id": p.project_id, "name": p.name, "domain": p.domain, "summary": p.summary}
+
+
+def _project_detail(p) -> dict:
+    reg = load_registry(p)
+    return {
+        **_project_summary(p),
+        "gap_metric": p.gap_metric,
+        "entry_twins": [reg.products[t].operational_twin_id for t in p.entry_twins],
+        "twins": {
+            tw.operational_twin_id: {
+                "twin_type": tw.twin_type, "design_twin_id": tw.design_twin_id, "vendor": tw.vendor,
+                "twin_mode": tw.twin_mode,
+                "channels": [{"channel_id": c.channel_id, "name": c.name, "unit": c.unit, "direction": c.direction,
+                              "envelope": [c.env_min, c.env_max], "tolerance_pct": c.tolerance_pct}
+                             for c in tw.channels],
+            } for tw in reg.products.values()
+        },
+        "system_twin": {
+            "twin_id": reg.system.operational_system_twin_id,
+            "constituents": [reg.products[t].operational_twin_id for t in reg.system.constituents],
+            "outputs_come_from": [reg.products[t].operational_twin_id for t in reg.system.output_constituents],
+            "connections": list(reg.system.connections),
+        },
+    }
 
 
 def evidence(run: str) -> RunEvidence:
@@ -76,18 +112,41 @@ def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/api/projects")
+def projects() -> dict:
+    return {"projects": [_project_summary(p) for p in list_projects()]}
+
+
+@app.get("/api/projects/{project_id}")
+def project_detail(project_id: str) -> dict:
+    return _project_detail(_project_or_404(project_id))
+
+
+@app.get("/api/projects/{project_id}/runs")
+def project_runs(project_id: str) -> dict:
+    _project_or_404(project_id)
+    return runs(project_id=project_id)
+
+
 @app.get("/api/runs")
-def runs() -> dict:
+def runs(project_id: str | None = None) -> dict:
     cfg = load_runs_config()
+    rows = cfg["runs"] if project_id is None else [r for r in cfg["runs"] if r.get("project_id") == project_id]
     return {"default": cfg["default"], "runs": [{"run": r["run"], "title": r["title"],
-                                                  "core_ledger_head_hash": r["core_ledger_head_hash"]} for r in cfg["runs"]]}
+                                                  "project_id": r.get("project_id"),
+                                                  "core_ledger_head_hash": r["core_ledger_head_hash"]} for r in rows]}
 
 
 @app.get("/api/runs/{run}/meta")
 def meta(run: str) -> dict:
     ev = evidence(run)
-    reg = load_registry()
+    pin = _pinned(run)
     started = next(e["payload"] for e in ev.core if e["entry_type"] == "run_started")
+    project_fields = {}
+    if pin.get("project_id"):
+        detail = _project_detail(_project_or_404(pin["project_id"]))
+        project_fields = {"project_id": detail["project_id"], "twins": detail["twins"],
+                          "system_twin": detail["system_twin"], "entry_twins": detail["entry_twins"]}
     return {
         "run": run, "title": ev.title, "ticks": len(ev.timeline), "tick_seconds": ev.tick_seconds,
         "start_time": ev.manifest["start_time"], "scenario": started["scenario"], "seed": started["seed"],
@@ -95,20 +154,7 @@ def meta(run: str) -> dict:
         "ai_model": ev.manifest.get("ai_model"), "code_commit": ev.manifest.get("code_commit"),
         "evidence_source": ev.source, "verification": ev.verification,
         "display_ranges": _display_ranges(ev),
-        "twins": {
-            p.operational_twin_id: {
-                "twin_type": p.twin_type, "design_twin_id": p.design_twin_id, "vendor": p.vendor,
-                "channels": [{"channel_id": c.channel_id, "name": c.name, "unit": c.unit, "direction": c.direction,
-                              "envelope": [c.env_min, c.env_max], "tolerance_pct": c.tolerance_pct}
-                             for c in p.channels],
-            } for p in reg.products.values()
-        },
-        "system_twin": {
-            "twin_id": reg.system.operational_system_twin_id,
-            "constituents": [reg.products[t].operational_twin_id for t in reg.system.constituents],
-            "outputs_come_from": [reg.products[t].operational_twin_id for t in reg.system.output_constituents],
-            "connections": list(reg.system.connections),
-        },
+        **project_fields,
     }
 
 
@@ -222,7 +268,9 @@ def ask(run: str, body: AskRequest, request: Request) -> dict:
     if _rate_limited(_ask_minute, who, ASK_PER_MINUTE, 60) or _rate_limited(_ask_day, who, ASK_PER_DAY, 86400):
         raise HTTPException(429, "question limit reached; please wait a little before asking again")
     ev = evidence(run)
-    toolbox = Toolbox(ev, body.tick, body.motor_only)
+    pin = _pinned(run)
+    project = _project_or_404(pin["project_id"]) if pin.get("project_id") else None
+    toolbox = Toolbox(ev, body.tick, body.motor_only, project)
     try:
         return assistant_ask(get_chat(), toolbox, body.question, [t.model_dump() for t in body.history])
     except AssistantError as exc:

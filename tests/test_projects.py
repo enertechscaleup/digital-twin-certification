@@ -13,7 +13,7 @@ from engine.monitor import FieldMonitor
 from engine.protocol import EscalationProtocol
 from engine.registry import load_registry
 from engine.run import run_assurance
-from projects import DEFAULT_PROJECT, ProjectError, load_project
+from projects import DEFAULT_PROJECT, PROJECTS_DIR, ProjectError, find_project, list_projects, load_project
 from telemetry.faults import Scenario
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -133,6 +133,27 @@ class TestOilGasProject(unittest.TestCase):
             a = run_assurance(s, seed=7, start_time=START)
             b = run_assurance(s, seed=7, start_time=START, project=reversed_project)
             self.assertEqual(a.ledger.head_hash, b.ledger.head_hash)
+
+
+class TestProjectDiscovery(unittest.TestCase):
+    def test_entry_twins_are_those_nothing_feeds(self):
+        p = load_project()
+        self.assertEqual(p.entry_twins, ("motor",))
+
+    def test_list_projects_finds_every_project_file(self):
+        ids = [p.project_id for p in list_projects()]
+        self.assertIn("oil-gas-compressor-train", ids)
+        self.assertEqual(ids, sorted(ids))
+
+    def test_list_projects_reads_from_a_given_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(list_projects(Path(d)), [])
+
+    def test_find_project_by_id(self):
+        p = find_project("oil-gas-compressor-train")
+        self.assertIsNotNone(p)
+        self.assertEqual(p.name, "Compressor train")
+        self.assertIsNone(find_project("does-not-exist"))
 
 
 class TestLayouts(unittest.TestCase):
