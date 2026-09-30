@@ -17,7 +17,8 @@ from datetime import datetime
 from pathlib import Path
 
 from telemetry.faults import Scenario
-from telemetry.generator import TWIN_ORDER, Reading, TelemetryGenerator
+from projects import load_project
+from telemetry.generator import Reading, TelemetryGenerator
 from telemetry.sinks import JsonlFileSink
 
 
@@ -47,7 +48,7 @@ def _gap_line(batch: list[Reading]) -> str:
 
 def cmd_bench(args: argparse.Namespace) -> None:
     gen = TelemetryGenerator(seed=args.seed, start_time=_parse_time(args.start_time))
-    for twin_type in TWIN_ORDER if args.twin == "all" else (args.twin,):
+    for twin_type in gen.order if args.twin == "all" else (args.twin,):
         run_id = gen.bench_run_id(twin_type)
         sink = _sinks(args.out, run_id)
         sink.write_manifest(gen.manifest(run_id, "bench", {
@@ -95,7 +96,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     b = sub.add_parser("bench", parents=[common], help="test-bench sweep across the assured input range")
-    b.add_argument("--twin", choices=[*TWIN_ORDER, "all"], default="all")
+    b.add_argument("--twin", choices=[*load_project().processing_order, "all"], default="all")
     b.add_argument("--levels", type=int, default=5, help="values per input across its range (default 5)")
     b.add_argument("--repeats", type=int, default=3, help="samples per test point (default 3)")
     b.set_defaults(func=cmd_bench)

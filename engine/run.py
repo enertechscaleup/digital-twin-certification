@@ -19,6 +19,7 @@ from engine.recalibration import Recalibrator, run_recalibration
 from engine.registry import Registry, load_registry
 from engine.validation import bench_validate
 from engine.verification import verify
+from projects import Project
 from telemetry.faults import Scenario
 from telemetry.generator import GENERATOR_VERSION, TelemetryGenerator
 
@@ -47,10 +48,12 @@ def run_assurance(
     checkpoint_every: int = 10,
     recalibrator: Recalibrator | None = None,
     advisor: Advisor | None = None,
+    project: Project | None = None,
 ) -> RunResult:
+    """``project`` defaults to the oil & gas compressor train (projects/compressor_train.json)."""
     protocol = protocol or EscalationProtocol()
-    registry = registry or load_registry()
-    gen = TelemetryGenerator(seed=seed, start_time=start_time, twins=twins)
+    registry = registry or load_registry(project)
+    gen = TelemetryGenerator(seed=seed, start_time=start_time, twins=twins, project=project)
     ts0 = gen._timestamp(0)
     ledger = EvidenceLedger(ledger_path)
 

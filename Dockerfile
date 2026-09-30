@@ -11,6 +11,7 @@ FROM python:3.12-slim
 WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+COPY projects/ projects/
 COPY telemetry/ telemetry/
 COPY engine/ engine/
 COPY explain/ explain/

@@ -1,7 +1,7 @@
 """The telemetry generator.
 
-Produces two kinds of synthetic data, for every channel of the motor and
-compressor twins:
+Produces two kinds of synthetic data, for every channel of every twin in a
+project (projects/), in the order the project's connections require:
 
 * **Bench** data -- a controlled sweep across each twin's assured input
   range, as a physical test bench would run before deployment. Used for
@@ -22,31 +22,19 @@ from __future__ import annotations
 
 import hashlib
 import itertools
-import json
 import math
 import random
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Iterator
 
+from projects import Project, load_project
 from telemetry.faults import Scenario
 from telemetry.models import PhysicalModel, TwinModel
 
 GENERATOR_VERSION = "0.1.0"
-CONFIG_DIR = Path(__file__).parent / "config"
-# Motor first: the compressor's speed input comes from the motor's output.
-TWIN_ORDER = ("motor", "compressor")
 DECIMALS = 4
-
-
-def load_config(twin_type: str) -> dict:
-    return json.loads((CONFIG_DIR / f"{twin_type}.json").read_text(encoding="utf-8"))
-
-
-def _config_sha256(twin_type: str) -> str:
-    return hashlib.sha256((CONFIG_DIR / f"{twin_type}.json").read_bytes()).hexdigest()
 
 
 def _round(value: float | None) -> float | None:
@@ -82,11 +70,15 @@ class TelemetryGenerator:
         seed: int = 42,
         start_time: datetime | None = None,
         twins: dict[str, TwinModel] | None = None,
+        project: Project | None = None,
     ):
         self.seed = seed
         self.start_time = (start_time or datetime.now(timezone.utc)).replace(microsecond=0)
-        self.configs = {t: load_config(t) for t in TWIN_ORDER}
-        self.twins = twins or {t: TwinModel(t) for t in TWIN_ORDER}
+        self.project = project or load_project()
+        # Feeding twins first: a linked input needs its source's output from the same tick.
+        self.order = self.project.processing_order
+        self.configs = {t: self.project.config(t) for t in self.order}
+        self.twins = twins or {t: TwinModel(t) for t in self.order}
         # Operator setpoints: (twin_type, input channel) -> value held from now on,
         # replacing the operating profile's nominal and swing (jitter still applies).
         self.setpoints: dict[tuple[str, str], float] = {}
@@ -123,9 +115,9 @@ class TelemetryGenerator:
                     "operational_twin_id": self.configs[t]["operational_twin_id"],
                     "twin_version": self.twins[t].version,
                     "twin_params": self.twins[t].params,
-                    "config_sha256": _config_sha256(t),
+                    "config_sha256": self.project.config_sha256(t),
                 }
-                for t in TWIN_ORDER
+                for t in self.order
             },
             "note": "injected_faults is ground truth for testing only; the verification engine must not read it.",
             **details,
@@ -142,7 +134,7 @@ class TelemetryGenerator:
         Bench inputs are exact setpoints; outputs carry sensor noise."""
         if levels < 2:
             raise ValueError("levels must be at least 2 to cover the envelope's min and max")
-        cfg = load_config(twin_type)
+        cfg = self.configs[twin_type]
         twin = self.twins[twin_type]
         physical = PhysicalModel(cfg, self._rng(f"bench-noise:{twin_type}"))
         run_id = self.bench_run_id(twin_type)
@@ -182,7 +174,7 @@ class TelemetryGenerator:
         hours_per_tick = scenario.operational_hours_per_tick or self.tick_seconds / 3600
         profile_rng = self._rng("field-profile")
         envelope_rng = self._rng("field-envelope")
-        physical = {t: PhysicalModel(self.configs[t], self._rng(f"field-noise:{t}")) for t in TWIN_ORDER}
+        physical = {t: PhysicalModel(self.configs[t], self._rng(f"field-noise:{t}")) for t in self.order}
         last_reported: dict[tuple[str, str], float | None] = {}
 
         for tick in range(scenario.ticks):
@@ -190,12 +182,12 @@ class TelemetryGenerator:
             true_outputs: dict[str, dict[str, float]] = {}
             batch: list[Reading] = []
 
-            for twin_type in TWIN_ORDER:
+            for twin_type in self.order:
                 cfg = self.configs[twin_type]
                 faults: dict[str, list[str]] = defaultdict(list)
                 inputs = [c for c in cfg["channels"] if c["direction"] == "input"]
                 outputs = [c for c in cfg["channels"] if c["direction"] == "output"]
-                linked = cfg.get("linked_inputs", {})
+                linked = self.project.linked_inputs(twin_type)
 
                 # 1. The machine's true operating condition.
                 true_in: dict[str, float] = {}

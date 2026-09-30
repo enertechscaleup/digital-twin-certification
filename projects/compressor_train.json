@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "project_id": "oil-gas-compressor-train",
+  "name": "Compressor train",
+  "domain": "Oil & gas",
+  "summary": "An electric motor drives a gas compressor. Two independently owned twins, composed into one system twin.",
+  "gap": {"metric": "relative_pct_of_prediction"},
+  "twins": [
+    {"twin_type": "motor", "config": "../telemetry/config/motor.json", "name": "Motor", "role": "product",
+     "registry_id": "vendor-a/em-400", "asset_kind": "electric_motor"},
+    {"twin_type": "compressor", "config": "../telemetry/config/compressor.json", "name": "Compressor", "role": "product",
+     "registry_id": "vendor-b/rc-12", "asset_kind": "compressor"}
+  ],
+  "composition": {
+    "name": "Compressor system",
+    "description": "The compressor system: the motor drives the compressor. The system's own outputs are the compressor's outputs.",
+    "design_system_twin_id": "compressor-system-design",
+    "operational_system_twin_id": "compressor-system-op-001",
+    "output_constituents": ["compressor"],
+    "connections": [
+      {
+        "from_twin": "motor",
+        "from_channel": "speed",
+        "to_twin": "compressor",
+        "to_channel": "speed",
+        "description": "the motor's shaft speed drives the compressor"
+      }
+    ]
+  }
+}

@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from telemetry.faults import DataQualityFault, EnvelopeViolation, Scenario, WearDrift
-from telemetry.generator import TelemetryGenerator, load_config
+from projects import load_project
+from telemetry.generator import TelemetryGenerator
 from telemetry.sinks import InMemorySink, JsonlFileSink
 
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -66,8 +67,8 @@ class TestFieldStream(unittest.TestCase):
     def test_healthy_inputs_stay_inside_envelope(self):
         envelopes = {
             (t, c["channel_id"]): c["envelope"]
-            for t in ("motor", "compressor")
-            for c in load_config(t)["channels"]
+            for t in load_project().processing_order
+            for c in load_project().config(t)["channels"]
         }
         for r in rows(Scenario(name="t", ticks=1000)):
             if r.direction == "input":

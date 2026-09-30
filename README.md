@@ -100,7 +100,7 @@ they are written into the ledger at verification time.
 |---|---|
 | `engine/ledger.py` | Hash-chained ledger and chain verification |
 | `engine/protocol.py` | Escalation and data-quality rules |
-| `engine/registry.py`, `engine/config/system.json` | Twin registration and system composition |
+| `projects/`, `engine/registry.py` | Project files (twins, composition) and the loader; the registry is built from a project |
 | `engine/verification.py`, `engine/validation.py` | Design-time checks |
 | `engine/monitor.py` | Field classification, escalation, cascade, anomalies |
 | `engine/run.py` | End-to-end orchestration |

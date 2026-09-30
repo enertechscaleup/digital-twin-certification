@@ -1,15 +1,12 @@
 """Twin registration: which twins exist, their channels and assured envelopes,
-and how product twins compose into the system twin."""
+and how product twins compose into the system twin. Built from a project file
+(projects/), so neither the twins nor their order are fixed in code."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
-from telemetry.generator import TWIN_ORDER, load_config
-
-SYSTEM_CONFIG = Path(__file__).parent / "config" / "system.json"
+from projects import Project, load_project
 
 
 @dataclass(frozen=True)
@@ -62,7 +59,7 @@ class SystemTwin:
 
 @dataclass(frozen=True)
 class Registry:
-    products: dict[str, ProductTwin]  # keyed by twin type, in processing order
+    products: dict[str, ProductTwin]  # keyed by twin type, in processing order (feeding twins first)
     system: SystemTwin
 
     def by_operational_id(self, twin_id: str) -> ProductTwin:
@@ -85,15 +82,16 @@ def _product(cfg: dict) -> ProductTwin:
     )
 
 
-def load_registry() -> Registry:
-    s = json.loads(SYSTEM_CONFIG.read_text(encoding="utf-8"))
+def load_registry(project: Project | None = None) -> Registry:
+    """``project`` defaults to the oil & gas compressor train."""
+    p = project or load_project()
     return Registry(
-        products={t: _product(load_config(t)) for t in TWIN_ORDER},
+        products={t: _product(p.config(t)) for t in p.processing_order},
         system=SystemTwin(
-            design_system_twin_id=s["design_system_twin_id"],
-            operational_system_twin_id=s["operational_system_twin_id"],
-            constituents=tuple(s["constituents"]),
-            output_constituents=tuple(s["output_constituents"]),
-            connections=tuple(s.get("connections", [])),
+            design_system_twin_id=p.design_system_twin_id,
+            operational_system_twin_id=p.operational_system_twin_id,
+            constituents=p.processing_order,
+            output_constituents=p.output_constituents,
+            connections=p.connections,
         ),
     )
