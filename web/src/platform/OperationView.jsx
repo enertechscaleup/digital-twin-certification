@@ -4,6 +4,7 @@ import { ConfigDrawer, GapChart, Graph, InputChart, StatusPill } from './compone
 import { digitsFor, fmt } from './format.js'
 import { ESCALATION, TWIN_MODES, channelCount, layers, topology, twinByKey } from './model/projects.js'
 import { mockRun } from './model/mockRun.js'
+import WireframeAsset from '../visual/wireframe/WireframeAsset.jsx'
 
 const CAUSE = {
   gap: (r) => `${r.channel}: gap beyond tolerance for ${ESCALATION.flag_after}+ readings (tick ${r.since})`,
@@ -309,14 +310,15 @@ function PendingProject({ project }) {
             <div key={t.key} className="panel">
               <div className="panel-head">
                 <div><div className="label">{t.role === 'controller' ? 'Controller twin' : 'Product twin'} · {TWIN_MODES[t.twin_mode].label}</div><div className="h4" style={{ fontSize: 14 }}>{t.name}</div></div>
-                <span className="small muted">Owner: {t.owner || 'not named yet'}</span>
+                <span className="small muted">{t.registry_id ? `Registered: ${t.registry_id} · ${t.owner}` : 'Unregistered · cannot be assured until its owner registers it'}</span>
               </div>
+              {t.asset_kind && <WireframeAsset kind={t.asset_kind} height={120} spin={false} label={`Wireframe of ${t.name}`} />}
               <div className="table-wrap" style={{ border: 0, borderRadius: 0 }}>
                 <table className="grid" style={{ minWidth: 520 }}>
                   <thead><tr><th>Channel</th><th>Direction</th><th>Unit</th><th>Assured range</th><th>Tolerance</th></tr></thead>
                   <tbody>{t.channels.map((c) => (
                     <tr key={c.id}><td>{c.name}</td><td><span className={`dir dir-${c.direction}`}>{c.direction}</span></td><td>{c.unit}</td>
-                      <td className="num">{c.assured_range[0]} – {c.assured_range[1]}</td><td className="num">{c.direction === 'output' ? `${c.tolerance_pct}%` : '—'}</td></tr>
+                      <td className="num">{c.assured_range[0]} – {c.assured_range[1]}</td><td className="num">{c.monitored === false ? 'not monitored' : c.direction === 'output' ? `${c.tolerance_pct}%` : '—'}</td></tr>
                   ))}</tbody>
                 </table>
               </div>

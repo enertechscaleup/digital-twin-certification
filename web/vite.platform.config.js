@@ -6,5 +6,5 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   base: './',
-  build: { outDir: 'dist-platform', emptyOutDir: true, rollupOptions: { input: 'platform.html' } },
+  build: { outDir: 'dist-platform', emptyOutDir: true, chunkSizeWarningLimit: 1200, rollupOptions: { input: 'platform.html' } },
 })

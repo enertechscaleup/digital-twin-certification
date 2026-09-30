@@ -1,49 +1,55 @@
 import { useEffect, useState } from 'react'
-import { ArrowLeft, ArrowRight, Check, Copy, Lock, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BadgeCheck, Check, Copy, Lock, Plus, Search, Trash2, TriangleAlert } from 'lucide-react'
 import { Graph } from './components.jsx'
+import FindConnect from './FindConnect.jsx'
 import { ESCALATION, GAP_METRIC, TWIN_MODES, topology, validate } from './model/projects.js'
+import { connectTwin, registryEntry } from './model/registry.js'
+import { removeTwin, slug, uniqueKey } from './model/draft.js'
 import { saveProject } from './model/store.js'
-
-const slug = (s) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
 const DOMAINS = ['Oil & gas', 'Manufacturing', 'Warehousing & robotics', 'Power & utilities', 'Process industry', 'Other']
 const STEPS = [
   ['Project', 'Name and domain'],
+  ['Find & connect', 'Choose registered twins'],
   ['Twins & channels', 'What each twin predicts'],
   ['Gap & tolerances', 'When twin and reality disagree'],
   ['Composition', 'How the twins connect'],
   ['Review', 'Check and create'],
 ]
+const LAST = STEPS.length - 1
+const DRAFT_KEY = 'te.draft.v2'
 
-const chan = (name, unit, direction, min, max, tolerance_pct = 5) => ({ id: slug(name), name, unit, direction, assured_range: [min, max], tolerance_pct })
-const EXAMPLE = {
-  name: 'Packaging line 2',
-  domain: 'Manufacturing',
-  summary: 'A conveyor feeds a case packer. Example values: edit them or clear the form.',
-  gap: { metric: GAP_METRIC.id },
-  twins: [
-    { key: 'conveyor', name: 'Conveyor', role: 'product', owner: 'Conveyor vendor', twin_mode: 'observational',
-      channels: [chan('Drive frequency', 'Hz', 'input', 30, 60), chan('Belt speed', 'm/s', 'output', 0.5, 1.5)] },
-    { key: 'case_packer', name: 'Case packer', role: 'product', owner: 'Packer vendor', twin_mode: 'semi_autonomous',
-      channels: [chan('Infeed speed', 'm/s', 'input', 0.5, 1.5), chan('Cases per minute', 'cases/min', 'output', 10, 30), chan('Motor temperature', '°C', 'output', 30, 80, 4)] },
-  ],
-  composition: {
-    system_twin: { name: 'Packaging line 2' },
-    output_constituents: ['case_packer'],
-    connections: [{ from: ['conveyor', 'belt_speed'], to: ['case_packer', 'infeed_speed'] }],
-  },
+const chan = (name, unit, direction, min, max, tolerance_pct = 5) => ({ id: slug(name), name, unit, direction, assured_range: [min, max], tolerance_pct, monitored: true })
+
+function example() {
+  const packer = connectTwin(registryEntry('vendor-g/cp-30'), 'Case packer', 'case_packer')
+  packer.twin_mode = 'semi_autonomous'
+  packer.channels.find((c) => c.id === 'motor_temperature').tolerance_pct = 4
+  return {
+    name: 'Packaging line 2',
+    domain: 'Manufacturing',
+    summary: 'A conveyor feeds a case packer. Example values: edit them or clear the form.',
+    gap: { metric: GAP_METRIC.id },
+    twins: [connectTwin(registryEntry('vendor-f/beltline'), 'Conveyor', 'conveyor'), packer],
+    composition: {
+      system_twin: { name: 'Packaging line 2' },
+      output_constituents: ['case_packer'],
+      connections: [{ from: ['conveyor', 'belt_speed'], to: ['case_packer', 'infeed_speed'] }],
+    },
+  }
 }
 const BLANK = { name: '', domain: 'Other', summary: '', gap: { metric: GAP_METRIC.id }, twins: [], composition: { system_twin: { name: '' }, output_constituents: [], connections: [] } }
 
 function loadDraft() {
-  try { return JSON.parse(localStorage.getItem('te.draft')) || EXAMPLE } catch { return EXAMPLE }
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY)) || example() } catch { return example() }
 }
 
 export default function NewProject() {
   const [p, setP] = useState(loadDraft)
   const [step, setStep] = useState(0)
-  useEffect(() => { try { localStorage.setItem('te.draft', JSON.stringify(p)) } catch { /* storage unavailable */ } }, [p])
+  useEffect(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(p)) } catch { /* storage unavailable */ } }, [p])
   const issues = validate(p)
   const update = (fn) => setP((prev) => { const next = structuredClone(prev); fn(next); return next })
+  const go = (n) => { setStep(n); window.scrollTo(0, 0) }
 
   return (
     <div className="content-width page">
@@ -52,8 +58,8 @@ export default function NewProject() {
         <div className="page-head-row">
           <h1 className="display display-l">Configure a <em>new</em> project</h1>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="button button-ghost button-small" onClick={() => { setP(EXAMPLE); setStep(0) }}>Load example</button>
-            <button className="button button-ghost button-small" onClick={() => { setP(BLANK); setStep(0) }}>Clear form</button>
+            <button className="button button-ghost button-small" onClick={() => { setP(example()); go(0) }}>Load example</button>
+            <button className="button button-ghost button-small" onClick={() => { setP(BLANK); go(0) }}>Clear form</button>
           </div>
         </div>
       </div>
@@ -62,7 +68,7 @@ export default function NewProject() {
         <ol className="stepper" aria-label="Steps">
           {STEPS.map(([title, sub], i) => (
             <li key={title}>
-              <button aria-current={step === i ? 'step' : undefined} className={i < step ? 'done' : undefined} onClick={() => setStep(i)}>
+              <button aria-current={step === i ? 'step' : undefined} className={i < step ? 'done' : undefined} onClick={() => go(i)}>
                 <span className="dot">{i < step ? <Check size={13} /> : String(i + 1).padStart(2, '0')}</span>
                 <span><b>{title}</b><span className="sub">{sub}</span></span>
               </button>
@@ -70,16 +76,19 @@ export default function NewProject() {
           ))}
         </ol>
 
-        <div style={{ display: 'grid', gap: 22, alignContent: 'start' }}>
+        <div style={{ display: 'grid', gap: 22, alignContent: 'start', minWidth: 0 }}>
           {step === 0 && <StepProject p={p} update={update} />}
-          {step === 1 && <StepTwins p={p} update={update} />}
-          {step === 2 && <StepGap p={p} update={update} />}
-          {step === 3 && <StepComposition p={p} update={update} />}
-          {step === 4 && <StepReview p={p} issues={issues} />}
+          {step === 1 && <FindConnect p={p} update={update} head={<StepHead n={2} title="Find and connect twins">
+            Twins are built and owned by their vendors. Browse the registry, select the twin for each part of the system, and connect it. Its declared channels fill in the next step.
+          </StepHead>} addManual={() => update((d) => { addManualTwin(d) })} />}
+          {step === 2 && <StepTwins p={p} update={update} onFind={() => go(1)} />}
+          {step === 3 && <StepGap p={p} update={update} />}
+          {step === 4 && <StepComposition p={p} update={update} />}
+          {step === 5 && <StepReview p={p} issues={issues} />}
           <div className="wizard-foot">
-            <button className="button button-ghost" onClick={() => setStep(step - 1)} disabled={step === 0}><ArrowLeft size={15} /> Back</button>
-            {step < 4
-              ? <button className="button button-dark" onClick={() => setStep(step + 1)}>Continue <ArrowRight size={15} /></button>
+            <button className="button button-ghost" onClick={() => go(step - 1)} disabled={step === 0}><ArrowLeft size={15} /> Back</button>
+            {step < LAST
+              ? <button className="button button-dark" onClick={() => go(step + 1)}>Continue <ArrowRight size={15} /></button>
               : <CreateButton p={p} issues={issues} />}
           </div>
         </div>
@@ -91,7 +100,7 @@ export default function NewProject() {
 function StepHead({ n, title, children }) {
   return (
     <div style={{ display: 'grid', gap: 8 }}>
-      <p className="kicker"><span className="accent">Step {n} of 5</span></p>
+      <p className="kicker"><span className="accent">Step {n} of {STEPS.length}</span></p>
       <h2 className="h3" style={{ fontSize: 28 }}>{title}</h2>
       {children && <p className="lead">{children}</p>}
     </div>
@@ -116,78 +125,132 @@ function StepProject({ p, update }) {
   )
 }
 
-function StepTwins({ p, update }) {
-  const addTwin = () => update((d) => {
-    const n = d.twins.length + 1
-    d.twins.push({ key: `twin_${n}`, name: `Twin ${n}`, role: 'product', owner: '', twin_mode: 'observational', channels: [chan('Input 1', 'unit', 'input', 0, 100), chan('Output 1', 'unit', 'output', 0, 100)] })
-  })
+function StepTwins({ p, update, onFind }) {
   return (
     <>
-      <StepHead n={2} title="Twins and their channels">
-        List each twin the owners will register, and the channels it works with. Inputs are measured conditions; outputs are what the twin predicts and what the platform compares with reality.
+      <StepHead n={3} title="Twins and their channels">
+        A connected twin's channels are its owner's declared interface, so their names, units and directions are fixed. Set the assured range the project will accept, within what the owner validated, and choose which channels to monitor.
       </StepHead>
-      {p.twins.map((t, ti) => (
-        <div key={ti} className="twin-block">
-          <div className="twin-block-head">
-            <div className="form-grid" style={{ flex: 1 }}>
-              <label className="field"><span>Twin name</span>
-                <input id={`t${ti}-name`} className="input" value={t.name} onChange={(e) => update((d) => { renameTwin(d, ti, e.target.value) })} /></label>
-              <label className="field"><span>Twin owner</span>
-                <input id={`t${ti}-owner`} className="input" value={t.owner} placeholder="Company that builds the twin" onChange={(e) => update((d) => { d.twins[ti].owner = e.target.value })} /></label>
+      {p.twins.length === 0 && <div className="callout">No twins yet. <button className="text-link" onClick={onFind}>Find and connect twins <ArrowRight size={13} /></button></div>}
+      {p.twins.map((t, ti) => {
+        const entry = t.registry_id && registryEntry(t.registry_id)
+        return (
+          <div key={ti} className="twin-block">
+            <div className="twin-block-head">
+              <div className="form-grid" style={{ flex: 1 }}>
+                <label className="field"><span>Twin name in this project</span>
+                  <input id={`t${ti}-name`} className="input" value={t.name} onChange={(e) => update((d) => { renameTwin(d, ti, e.target.value) })} /></label>
+                {entry
+                  ? <div className="field"><span>Registered twin</span>
+                      <div className="registered"><BadgeCheck size={15} /><span><b>{entry.name}</b><br /><span className="small muted">{entry.vendor} · {entry.registry_id}</span></span></div></div>
+                  : <label className="field"><span>Twin owner</span>
+                      <input id={`t${ti}-owner`} className="input" value={t.owner} placeholder="Company that builds the twin" onChange={(e) => update((d) => { d.twins[ti].owner = e.target.value })} /></label>}
+              </div>
+              <button className="icon-button" aria-label={`Remove ${t.name}`} onClick={() => update((d) => { removeTwin(d, ti) })}><Trash2 size={15} /></button>
             </div>
-            <button className="icon-button" aria-label={`Remove ${t.name}`} onClick={() => update((d) => { removeTwin(d, ti) })}><Trash2 size={15} /></button>
+            {!entry && (
+              <div className="callout callout-warn">
+                <b>Unregistered twin: cannot be assured.</b> Assurance needs verification against a registered twin. You can configure this slot now; assurance is refused until its owner registers the twin.
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'end' }}>
+              <div className="field"><span>Role</span>
+                <div className="seg" role="group" aria-label="Role">
+                  {[['product', 'Product twin'], ['controller', 'Controller']].map(([v, l]) => (
+                    <button key={v} aria-pressed={t.role === v} onClick={() => update((d) => { d.twins[ti].role = v })}>{l}</button>
+                  ))}
+                </div></div>
+              <div className="field"><span>Assured mode</span>
+                <div className="seg" role="group" aria-label="Twin mode">
+                  {Object.entries(TWIN_MODES).map(([v, m]) => {
+                    const unsupported = entry && !entry.modes.includes(v)
+                    return <button key={v} aria-pressed={t.twin_mode === v} disabled={m.disabled || unsupported} title={unsupported ? 'Not declared by the twin owner' : m.note}
+                      onClick={() => update((d) => { d.twins[ti].twin_mode = v })}>{m.label}</button>
+                  })}
+                </div></div>
+              <p className="hint" style={{ flex: '1 1 220px' }}>{TWIN_MODES[t.twin_mode].note}{t.role === 'controller' ? ' The controller role is descriptive: it follows the same cascade rules as any twin.' : ''}</p>
+            </div>
+            {entry ? <LockedChannels t={t} ti={ti} update={update} /> : <OpenChannels t={t} ti={ti} update={update} />}
           </div>
-          <div style={{ display: 'flex', gap: 22, flexWrap: 'wrap', alignItems: 'end' }}>
-            <div className="field"><span>Role</span>
-              <div className="seg" role="group" aria-label="Role">
-                {[['product', 'Product twin'], ['controller', 'Controller']].map(([v, l]) => (
-                  <button key={v} aria-pressed={t.role === v} onClick={() => update((d) => { d.twins[ti].role = v })}>{l}</button>
+        )
+      })}
+      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="button button-ghost" onClick={onFind}><Search size={15} /> Find and connect another twin</button>
+      </div>
+    </>
+  )
+}
+
+function LockedChannels({ t, ti, update }) {
+  return (
+    <div className="table-wrap">
+      <table className="grid">
+        <thead><tr><th>Monitor</th><th style={{ width: '24%' }}>Channel <Lock size={10} /></th><th>Direction <Lock size={10} /></th><th>Unit <Lock size={10} /></th><th>Owner validated</th><th>Assured min</th><th>Assured max</th><th>Tolerance %</th></tr></thead>
+        <tbody>
+          {t.channels.map((c, ci) => {
+            const off = c.monitored === false
+            const outside = c.assured_range[0] < c.declared_range[0] || c.assured_range[1] > c.declared_range[1]
+            return (
+              <tr key={c.id} style={{ opacity: off ? 0.5 : 1 }}>
+                <td><input id={`t${ti}c${ci}-mon`} type="checkbox" checked={!off} aria-label={`Monitor ${c.name}`} style={{ accentColor: 'var(--orange)' }}
+                  onChange={(e) => update((d) => { d.twins[ti].channels[ci].monitored = e.target.checked })} /></td>
+                <td><b>{c.name}</b></td>
+                <td><span className={`dir dir-${c.direction}`}>{c.direction}</span></td>
+                <td>{c.unit}</td>
+                <td className="num muted">{c.declared_range[0]} – {c.declared_range[1]}</td>
+                {[0, 1].map((k) => (
+                  <td key={k}><input id={`t${ti}c${ci}-r${k}`} className="input compact num" type="number" value={c.assured_range[k]} disabled={off}
+                    min={c.declared_range[0]} max={c.declared_range[1]} aria-invalid={outside} aria-label={k ? 'Assured maximum' : 'Assured minimum'}
+                    style={outside ? { borderColor: 'var(--nullified)' } : undefined}
+                    onChange={(e) => update((d) => { d.twins[ti].channels[ci].assured_range[k] = Number(e.target.value) })} /></td>
                 ))}
-              </div></div>
-            <div className="field"><span>Assured mode</span>
-              <div className="seg" role="group" aria-label="Twin mode">
-                {Object.entries(TWIN_MODES).map(([v, m]) => (
-                  <button key={v} aria-pressed={t.twin_mode === v} disabled={m.disabled} title={m.note} onClick={() => update((d) => { d.twins[ti].twin_mode = v })}>{m.label}</button>
+                <td><input id={`t${ti}c${ci}-tol`} className="input compact num" type="number" min="0" step="0.5" value={c.direction === 'output' ? c.tolerance_pct : ''} disabled={off || c.direction !== 'output'} placeholder="—" aria-label="Tolerance"
+                  onChange={(e) => update((d) => { d.twins[ti].channels[ci].tolerance_pct = Number(e.target.value) })} /></td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+function OpenChannels({ t, ti, update }) {
+  return (
+    <>
+      <div className="table-wrap">
+        <table className="grid">
+          <thead><tr><th style={{ width: '26%' }}>Channel</th><th>Direction</th><th>Unit</th><th>Assured min</th><th>Assured max</th><th>Tolerance %</th><th /></tr></thead>
+          <tbody>
+            {t.channels.map((c, ci) => (
+              <tr key={ci}>
+                <td><input id={`t${ti}c${ci}-name`} className="input compact" value={c.name} aria-label="Channel name" onChange={(e) => update((d) => { renameChannel(d, ti, ci, e.target.value) })} /></td>
+                <td><select id={`t${ti}c${ci}-dir`} className="select compact" value={c.direction} aria-label="Direction" onChange={(e) => update((d) => { d.twins[ti].channels[ci].direction = e.target.value })}>
+                  <option value="input">Input</option><option value="output">Output</option></select></td>
+                <td><input id={`t${ti}c${ci}-unit`} className="input compact" value={c.unit} aria-label="Unit" onChange={(e) => update((d) => { d.twins[ti].channels[ci].unit = e.target.value })} /></td>
+                {[0, 1].map((k) => (
+                  <td key={k}><input id={`t${ti}c${ci}-r${k}`} className="input compact num" type="number" value={c.assured_range[k]} aria-label={k ? 'Assured maximum' : 'Assured minimum'}
+                    onChange={(e) => update((d) => { d.twins[ti].channels[ci].assured_range[k] = Number(e.target.value) })} /></td>
                 ))}
-              </div></div>
-            <p className="hint" style={{ flex: '1 1 220px' }}>{TWIN_MODES[t.twin_mode].note}{t.role === 'controller' ? ' The controller role is descriptive: it follows the same cascade rules as any twin.' : ''}</p>
-          </div>
-          <div className="table-wrap">
-            <table className="grid">
-              <thead><tr><th style={{ width: '26%' }}>Channel</th><th>Direction</th><th>Unit</th><th>Assured min</th><th>Assured max</th><th>Tolerance %</th><th /></tr></thead>
-              <tbody>
-                {t.channels.map((c, ci) => (
-                  <tr key={ci}>
-                    <td><input id={`t${ti}c${ci}-name`} className="input compact" value={c.name} aria-label="Channel name" onChange={(e) => update((d) => { renameChannel(d, ti, ci, e.target.value) })} /></td>
-                    <td><select id={`t${ti}c${ci}-dir`} className="select compact" value={c.direction} aria-label="Direction" onChange={(e) => update((d) => { d.twins[ti].channels[ci].direction = e.target.value })}>
-                      <option value="input">Input</option><option value="output">Output</option></select></td>
-                    <td><input id={`t${ti}c${ci}-unit`} className="input compact" value={c.unit} aria-label="Unit" onChange={(e) => update((d) => { d.twins[ti].channels[ci].unit = e.target.value })} /></td>
-                    {[0, 1].map((k) => (
-                      <td key={k}><input id={`t${ti}c${ci}-r${k}`} className="input compact num" type="number" value={c.assured_range[k]} aria-label={k ? 'Assured maximum' : 'Assured minimum'}
-                        onChange={(e) => update((d) => { d.twins[ti].channels[ci].assured_range[k] = Number(e.target.value) })} /></td>
-                    ))}
-                    <td><input id={`t${ti}c${ci}-tol`} className="input compact num" type="number" min="0" step="0.5" value={c.direction === 'output' ? c.tolerance_pct : ''} disabled={c.direction !== 'output'} placeholder="—" aria-label="Tolerance"
-                      onChange={(e) => update((d) => { d.twins[ti].channels[ci].tolerance_pct = Number(e.target.value) })} /></td>
-                    <td><button className="icon-button" aria-label={`Remove ${c.name}`} onClick={() => update((d) => { removeChannel(d, ti, ci) })}><Trash2 size={14} /></button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div><button className="text-link" onClick={() => update((d) => { d.twins[ti].channels.push(chan(`Channel ${d.twins[ti].channels.length + 1}`, 'unit', 'output', 0, 100)) })}><Plus size={14} /> Add channel</button></div>
-        </div>
-      ))}
-      <div><button className="button button-ghost" onClick={addTwin}><Plus size={15} /> Add a twin</button></div>
+                <td><input id={`t${ti}c${ci}-tol`} className="input compact num" type="number" min="0" step="0.5" value={c.direction === 'output' ? c.tolerance_pct : ''} disabled={c.direction !== 'output'} placeholder="—" aria-label="Tolerance"
+                  onChange={(e) => update((d) => { d.twins[ti].channels[ci].tolerance_pct = Number(e.target.value) })} /></td>
+                <td><button className="icon-button" aria-label={`Remove ${c.name}`} onClick={() => update((d) => { removeChannel(d, ti, ci) })}><Trash2 size={14} /></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div><button className="text-link" onClick={() => update((d) => { d.twins[ti].channels.push(chan(`Channel ${d.twins[ti].channels.length + 1}`, 'unit', 'output', 0, 100)) })}><Plus size={14} /> Add channel</button></div>
     </>
   )
 }
 
 function StepGap({ p, update }) {
-  const outputs = p.twins.flatMap((t, ti) => t.channels.map((c, ci) => ({ t, ti, c, ci })).filter((x) => x.c.direction === 'output'))
+  const outputs = p.twins.flatMap((t, ti) => t.channels.map((c, ci) => ({ t, ti, c, ci })).filter((x) => x.c.direction === 'output' && x.c.monitored !== false))
   return (
     <>
-      <StepHead n={3} title="What counts as a gap">
-        For every output, the platform compares what the asset measured with what the twin predicted for the same moment. Set how far apart they may be.
+      <StepHead n={4} title="What counts as a gap">
+        For every monitored output, the platform compares what the asset measured with what the twin predicted for the same moment. Set how far apart they may be.
       </StepHead>
       <div className="locked">
         <Lock size={16} />
@@ -229,15 +292,15 @@ function StepGap({ p, update }) {
 function StepComposition({ p, update }) {
   const outs = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'output').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${c.unit})` })))
   const ins = p.twins.flatMap((t) => t.channels.filter((c) => c.direction === 'input').map((c) => ({ v: `${t.key}|${c.id}`, l: `${t.name} · ${c.name} (${c.unit})` })))
-  const conIssues = validate(p).filter((i) => i.includes('→') || i.includes('loop') || i.includes('connection') || i.includes('output twin') || i.includes("system's outputs"))
+  const conIssues = validate(p).filter((i) => i.includes('→') || i.includes('loop') || i.includes('connection') || i.includes("system's outputs"))
   return (
     <>
-      <StepHead n={4} title="How the twins connect">
+      <StepHead n={5} title="How the twins connect">
         Connect an output of one twin to the input it feeds. Chains, side-by-side twins and a coordinating controller are all described this way. The drawing updates as you go.
       </StepHead>
       <div className="panel">
         <div className="panel-head"><span className="label">Composition preview</span><span className="chip">{topology(p)}</span></div>
-        <div className="panel-pad">{p.twins.length ? <Graph project={{ ...p, composition: { ...p.composition, system_twin: { ...p.composition.system_twin, name: p.composition.system_twin.name || p.name || 'System' } } }} pending /> : <p className="hint">Add twins in step 2 first.</p>}</div>
+        <div className="panel-pad">{p.twins.length ? <Graph project={{ ...p, composition: { ...p.composition, system_twin: { ...p.composition.system_twin, name: p.composition.system_twin.name || p.name || 'System' } } }} pending /> : <p className="hint">Connect twins in step 2 first.</p>}</div>
       </div>
       <div className="twin-block">
         <div className="twin-block-head"><h3 className="h4">Connections</h3>
@@ -272,7 +335,7 @@ function StepComposition({ p, update }) {
             </div>
           </fieldset>
         </div>
-        <p className="hint">The system twin is flagged when any constituent is nullified, and takes the status of the twins chosen here.</p>
+        <p className="hint">The system twin is derived from this composition; it is never connected from the registry. It is flagged when any constituent is nullified, and takes the status of the twins chosen here.</p>
       </div>
       {conIssues.length > 0 && <Issues issues={conIssues} />}
     </>
@@ -290,20 +353,25 @@ function Issues({ issues }) {
 function StepReview({ p, issues }) {
   const json = JSON.stringify(toProject(p), null, 2)
   const [copied, setCopied] = useState(false)
+  const unregistered = p.twins.filter((t) => !t.registry_id)
   const checks = [
-    ['Every twin has a name and at least one output', !issues.some((i) => i.includes('output channel') || i.includes('twin needs'))],
-    ['Every channel has a unit and a valid assured range', !issues.some((i) => i.includes('range') || i.includes('unit.'))],
-    ['Every output has a tolerance', !issues.some((i) => i.includes('tolerance'))],
+    ['Every twin has a name and at least one monitored output', !issues.some((i) => i.includes('output channel') || i.includes('twin needs'))],
+    ['Assured ranges are valid and within what each twin owner validated', !issues.some((i) => i.includes('range'))],
+    ['Every monitored output has a tolerance', !issues.some((i) => i.includes('tolerance'))],
     ['Connections run output → input, with matching units, and never loop', !issues.some((i) => i.includes('→') || i.includes('loop') || i.includes('connection'))],
     ['The system twin has at least one output twin', !issues.some((i) => i.includes("system's outputs"))],
   ]
   return (
     <>
-      <StepHead n={5} title="Review and create">
-        The platform checks the configuration with the same rules it uses when loading a project. Creating it records the setup only: twins are registered by their owners afterwards.
+      <StepHead n={6} title="Review and create">
+        The platform checks the configuration with the same rules it uses when loading a project. Creating it records the setup and the connections to registered twins; monitoring starts once telemetry is connected.
       </StepHead>
       <ul className="checklist panel panel-pad" style={{ gap: 10 }}>
         {checks.map(([t, ok]) => <li key={t}>{ok ? <Check size={15} className="ok" /> : <TriangleAlert size={15} className="bad" />} {t}</li>)}
+        <li>{unregistered.length ? <TriangleAlert size={15} style={{ color: 'var(--flagged)' }} /> : <Check size={15} className="ok" />}
+          {unregistered.length
+            ? `${unregistered.map((t) => t.name).join(', ')} ${unregistered.length > 1 ? 'are' : 'is'} unregistered and cannot be assured until the owner registers the twin.`
+            : 'Every twin is connected from the registry'}</li>
       </ul>
       {issues.length > 0 && <Issues issues={issues} />}
       <div className="panel">
@@ -346,6 +414,11 @@ function toProject(p) {
 
 // -- edits that keep ids and connections consistent ---------------------
 
+function addManualTwin(d) {
+  const name = `Unregistered twin ${d.twins.filter((t) => !t.registry_id).length + 1}`
+  d.twins.push({ key: uniqueKey(d, name), name, role: 'product', owner: '', twin_mode: 'observational',
+    channels: [chan('Input 1', 'unit', 'input', 0, 100), chan('Output 1', 'unit', 'output', 0, 100)] })
+}
 function renameTwin(d, ti, name) {
   const t = d.twins[ti]
   const old = t.key
@@ -355,12 +428,6 @@ function renameTwin(d, ti, name) {
   t.key = key
   for (const c of d.composition.connections) { if (c.from[0] === old) c.from[0] = key; if (c.to[0] === old) c.to[0] = key }
   d.composition.output_constituents = d.composition.output_constituents.map((k) => (k === old ? key : k))
-}
-function removeTwin(d, ti) {
-  const key = d.twins[ti].key
-  d.twins.splice(ti, 1)
-  d.composition.connections = d.composition.connections.filter((c) => c.from[0] !== key && c.to[0] !== key)
-  d.composition.output_constituents = d.composition.output_constituents.filter((k) => k !== key)
 }
 function renameChannel(d, ti, ci, name) {
   const t = d.twins[ti]
@@ -378,4 +445,3 @@ function removeChannel(d, ti, ci) {
   t.channels.splice(ci, 1)
   d.composition.connections = d.composition.connections.filter((k) => !(k.from[0] === t.key && k.from[1] === id) && !(k.to[0] === t.key && k.to[1] === id))
 }
-

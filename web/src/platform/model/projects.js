@@ -30,7 +30,7 @@ export const OIL_GAS = {
   gap: { metric: GAP_METRIC.id },
   twins: [
     {
-      key: 'motor', name: 'Motor', role: 'product', owner: 'Synthetic vendor A', twin_mode: 'semi_autonomous',
+      key: 'motor', name: 'Motor', role: 'product', owner: 'Synthetic vendor A', registry_id: 'vendor-a/em-400', asset_kind: 'electric_motor', twin_mode: 'semi_autonomous',
       operational_twin_id: 'motor-op-001', design_twin_id: 'motor-design',
       channels: [
         ch('volt', 'Supply voltage', 'V', 'input', 380, 420),
@@ -40,7 +40,7 @@ export const OIL_GAS = {
       ],
     },
     {
-      key: 'compressor', name: 'Compressor', role: 'product', owner: 'Synthetic vendor B', twin_mode: 'observational',
+      key: 'compressor', name: 'Compressor', role: 'product', owner: 'Synthetic vendor B', registry_id: 'vendor-b/rc-12', asset_kind: 'compressor', twin_mode: 'observational',
       operational_twin_id: 'compressor-op-001', design_twin_id: 'compressor-design',
       channels: [
         ch('speed', 'Drive speed', 'rpm', 'input', 1250, 1600),
@@ -78,7 +78,7 @@ export const AMR = {
   gap: { metric: GAP_METRIC.id },
   twins: [
     {
-      key: 'dispatcher', name: 'Fleet dispatcher', role: 'controller', owner: 'Synthetic vendor C', twin_mode: 'observational',
+      key: 'dispatcher', name: 'Fleet dispatcher', role: 'controller', owner: 'Synthetic vendor C', registry_id: 'vendor-c/fleetflow', asset_kind: 'fleet_dispatcher', twin_mode: 'observational',
       operational_twin_id: 'dispatcher-op-001', design_twin_id: 'dispatcher-design',
       channels: [
         ch('order_rate', 'Order lines', 'lines/h', 'input', 300, 900),
@@ -87,7 +87,7 @@ export const AMR = {
       ],
     },
     ...[1, 2].map((n) => ({
-      key: `amr${n}`, name: `AMR ${n}`, role: 'product', owner: 'Synthetic vendor D', twin_mode: 'semi_autonomous',
+      key: `amr${n}`, name: `AMR ${n}`, role: 'product', owner: 'Synthetic vendor D', registry_id: 'vendor-d/amr-600', asset_kind: 'amr', twin_mode: 'semi_autonomous',
       operational_twin_id: `amr${n}-op-001`, design_twin_id: 'amr-design',
       channels: [
         ch('task_rate', 'Assigned tasks', 'tasks/h', 'input', 40, 110),
@@ -98,7 +98,7 @@ export const AMR = {
       ],
     })),
     {
-      key: 'pick', name: 'Pick station', role: 'product', owner: 'Synthetic vendor E', twin_mode: 'observational',
+      key: 'pick', name: 'Pick station', role: 'product', owner: 'Synthetic vendor E', registry_id: 'vendor-e/ps-2', asset_kind: 'pick_station', twin_mode: 'observational',
       operational_twin_id: 'pick-op-001', design_twin_id: 'pick-design',
       channels: [
         ch('arrivals_1', 'Tote arrivals, AMR 1', 'totes/h', 'input', 55, 110),
@@ -164,14 +164,16 @@ export function validate(p) {
     if (keys.has(t.key)) issues.push(`Two twins share the id "${t.key}".`)
     keys.add(t.key)
     if (!t.name.trim()) issues.push('Every twin needs a name.')
-    if (!t.channels.some((c) => c.direction === 'output')) issues.push(`${t.name || t.key} needs at least one output channel to compare with reality.`)
+    if (!t.channels.some((c) => c.direction === 'output' && c.monitored !== false)) issues.push(`${t.name || t.key} needs at least one monitored output channel to compare with reality.`)
     const ids = new Set()
     for (const c of t.channels) {
       if (ids.has(c.id)) issues.push(`${t.name}: two channels share the id "${c.id}".`)
       ids.add(c.id)
       if (!c.name.trim() || !c.unit.trim()) issues.push(`${t.name}: every channel needs a name and a unit.`)
       if (!(Number(c.assured_range[0]) < Number(c.assured_range[1]))) issues.push(`${t.name} · ${c.name}: the assured range minimum must be below the maximum.`)
-      if (c.direction === 'output' && !(Number(c.tolerance_pct) > 0)) issues.push(`${t.name} · ${c.name}: set a tolerance above 0%.`)
+      if (c.declared_range && (c.assured_range[0] < c.declared_range[0] || c.assured_range[1] > c.declared_range[1]))
+        issues.push(`${t.name} · ${c.name}: the assured range must stay within ${c.declared_range[0]}–${c.declared_range[1]} ${c.unit}, the range the twin owner validated.`)
+      if (c.direction === 'output' && c.monitored !== false && !(Number(c.tolerance_pct) > 0)) issues.push(`${t.name} · ${c.name}: set a tolerance above 0%.`)
     }
   }
   for (const c of p.composition.connections) {
