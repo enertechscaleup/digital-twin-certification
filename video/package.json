@@ -1,0 +1,19 @@
+{
+  "name": "twinevidence-video",
+  "private": true,
+  "version": "0.0.0",
+  "description": "TwinEvidence demo video, assembled with Remotion. Shares its wireframe geometry with the platform (web/src/visual).",
+  "scripts": {
+    "studio": "remotion studio",
+    "still": "remotion still",
+    "render": "remotion render"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.532",
+    "@remotion/google-fonts": "^4.0.532",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "remotion": "^4.0.532",
+    "three": "^0.186.1"
+  }
+}

@@ -88,6 +88,74 @@ function casePacker(g, ink, accent) {
   for (const [x, y] of [[0.3, -0.18], [0.3, 0.02], [-0.1, -0.18]]) part(g, box(0.28, 0.2, 0.3), ink, { at: [x, y, 0] })
 }
 
+
+// -- infrastructure at scale (demo video, Sections 1, 2 and 4) --------------------
+
+function coolingTower(g, ink, at) {
+  const profile = [[0.36, 0], [0.3, 0.3], [0.25, 0.62], [0.24, 0.8], [0.27, 1.0]].map(([r, y]) => new THREE.Vector2(r, y))
+  part(g, new THREE.LatheGeometry(profile, 14), ink, { at, threshold: 1 })
+}
+
+function geothermalPlant(g, ink, accent) {
+  coolingTower(g, ink, [-0.7, -0.5, -0.15])
+  coolingTower(g, ink, [-0.05, -0.5, -0.25])
+  part(g, box(0.7, 0.5, 0.55), ink, { at: [0.75, -0.25, 0.05] })
+  part(g, box(0.2, 0.18, 0.55), ink, { at: [0.75, 0.09, 0.05] })
+  for (const x of [-0.75, -0.25, 0.25]) {
+    part(g, cyl(0.06, 0.22, 8), accent, { at: [x, -0.39, 0.55] })
+    part(g, cyl(0.035, 0.35, 8), accent, { at: [x + 0.17, -0.3, 0.55], rot: AX })
+  }
+  part(g, cyl(0.035, 1.25, 8), accent, { at: [-0.1, -0.13, 0.55], rot: AX })
+  part(g, cyl(0.035, 0.5, 8), accent, { at: [0.55, -0.13, 0.32], rot: AZ })
+  part(g, box(2.1, 0.03, 1.4), ink, { at: [0, -0.52, 0.1] })
+}
+
+function batteryArray(g, ink, accent) {
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < 4; c++) {
+      const at = [-0.75 + c * 0.5, -0.36, -0.3 + r * 0.55]
+      part(g, box(0.42, 0.3, 0.3), ink, { at })
+      part(g, box(0.005, 0.24, 0.24), ink, { at: [at[0] + 0.1, at[1], at[2]] })
+    }
+  }
+  part(g, box(0.28, 0.36, 0.3), accent, { at: [1.2, -0.33, -0.02] })
+  part(g, box(2.7, 0.03, 1.3), ink, { at: [0.2, -0.52, -0.02] })
+}
+
+function substation(g, ink, accent) {
+  for (const x of [-0.55, 0.15]) {
+    part(g, box(0.5, 0.42, 0.36), ink, { at: [x, -0.3, 0.25] })
+    for (let i = 0; i < 4; i++) part(g, box(0.02, 0.32, 0.42), ink, { at: [x - 0.18 + i * 0.12, -0.3, 0.25] })
+    for (const dx of [-0.14, 0, 0.14]) {
+      for (let k = 0; k < 3; k++) part(g, cyl(0.035, 0.06, 8), accent, { at: [x + dx, -0.05 + k * 0.08, 0.25] })
+    }
+  }
+  for (const x of [-0.9, 0.85]) {
+    part(g, box(0.04, 1.1, 0.04), ink, { at: [x, 0, -0.35] })
+    part(g, box(0.04, 1.1, 0.04), ink, { at: [x, 0, 0.0] })
+  }
+  part(g, box(1.8, 0.04, 0.04), ink, { at: [-0.02, 0.55, -0.35] })
+  part(g, box(1.8, 0.04, 0.04), ink, { at: [-0.02, 0.55, 0.0] })
+  for (const z of [-0.3, -0.17, -0.04]) part(g, box(1.75, 0.01, 0.01), ink, { at: [-0.02, 0.42, z] })
+  part(g, box(2.2, 0.03, 1.2), ink, { at: [0, -0.53, 0] })
+}
+
+function dataCenter(g, ink, accent) {
+  part(g, box(2.2, 0.55, 1.0), ink, { at: [0, -0.25, 0] })
+  for (let i = 0; i < 6; i++) {
+    const x = -0.85 + i * 0.34
+    part(g, box(0.24, 0.1, 0.3), ink, { at: [x, 0.08, -0.2] })
+    part(g, cyl(0.08, 0.02, 12), ink, { at: [x, 0.14, -0.2] })
+    part(g, box(0.24, 0.1, 0.3), ink, { at: [x, 0.08, 0.22] })
+    part(g, cyl(0.08, 0.02, 12), ink, { at: [x, 0.14, 0.22] })
+  }
+  for (let i = 0; i < 4; i++) part(g, box(0.22, 0.2, 0.34), ink, { at: [-0.8 + i * 0.32, -0.42, 0.75] })
+  part(g, box(0.3, 0.4, 0.3), accent, { at: [1.3, -0.32, 0] })
+  part(g, box(0.004, 0.4, 0.95), ink, { at: [0.35, -0.25, 0] })
+  part(g, box(0.004, 0.4, 0.95), ink, { at: [-0.35, -0.25, 0] })
+  part(g, box(3.0, 0.03, 2.0), ink, { at: [0.1, -0.53, 0.2] })
+}
+
 export const ASSET_KINDS = {
   electric_motor: { label: 'Electric motor', build: electricMotor },
   compressor: { label: 'Gas compressor', build: compressor },
@@ -96,16 +164,25 @@ export const ASSET_KINDS = {
   fleet_dispatcher: { label: 'Fleet dispatcher', build: fleetDispatcher },
   conveyor: { label: 'Belt conveyor', build: conveyor },
   case_packer: { label: 'Case packer', build: casePacker },
+  geothermal_plant: { label: 'Geothermal plant', build: geothermalPlant },
+  battery_array: { label: 'Battery storage', build: batteryArray },
+  substation: { label: 'Substation', build: substation },
+  data_center: { label: 'Data center', build: dataCenter },
 }
 
-/** Build one asset as a THREE.Group of line segments, centred on the origin. */
-export function buildAsset(kind, colors) {
+/**
+ * Build one asset as a THREE.Group of line segments, centred on the origin, or with
+ * ``ground: true`` standing on y = 0 (for placing several assets in one scene).
+ */
+export function buildAsset(kind, colors, { ground = false, opacity = 1 } = {}) {
   const group = new THREE.Group()
-  const ink = new THREE.LineBasicMaterial({ color: colors.ink })
-  const accent = new THREE.LineBasicMaterial({ color: colors.accent })
+  const transparent = opacity < 1
+  const ink = new THREE.LineBasicMaterial({ color: colors.ink, transparent, opacity })
+  const accent = new THREE.LineBasicMaterial({ color: colors.accent, transparent, opacity })
   ;(ASSET_KINDS[kind] || ASSET_KINDS.electric_motor).build(group, ink, accent)
   const box3 = new THREE.Box3().setFromObject(group)
   group.position.sub(box3.getCenter(new THREE.Vector3()))
+  if (ground) group.position.y += (box3.max.y - box3.min.y) / 2
   const holder = new THREE.Group()
   holder.add(group)
   return holder

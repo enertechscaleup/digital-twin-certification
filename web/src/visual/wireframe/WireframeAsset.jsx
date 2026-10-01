@@ -1,43 +1,41 @@
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { buildAsset } from './assets.js'
+import { applyDraw, createRenderer, disposeTree, lineParts, readTokens } from './renderer.js'
 
-// One component for every place an asset is drawn: the platform's twin registry
-// now, the demo video's stage page later. Colours come from the page's own tokens.
-
-function token(name, fallback) {
-  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-  return v || fallback
-}
+// One asset per canvas, as in the platform's twin registry. The demo video draws the
+// same geometry (assets.js) through WireframeScene. Colours come from the page's tokens.
 
 /**
  * kind:   an ASSET_KINDS key (e.g. "electric_motor")
  * height: canvas height in px (width fills the container)
  * spin:   slow turntable rotation (ignored when the viewer prefers reduced motion)
  * yaw:    fixed rotation in radians, for scripted camera moves (overrides spin)
+ * draw:   0–1, how much of the outline is drawn (1 = complete)
  */
-export default function WireframeAsset({ kind, height = 150, spin = true, yaw, label }) {
+export default function WireframeAsset({ kind, height = 150, spin = true, yaw, draw = 1, label }) {
   const ref = useRef(null)
   const spinRef = useRef(spin)
   const startRef = useRef(() => {})
   const yawRef = useRef(yaw)
   const poseRef = useRef(() => {})
+  const drawRef = useRef(draw)
+  const drawFnRef = useRef(() => {})
 
   useEffect(() => {
     const el = ref.current
-    let renderer
-    try {
-      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true })
-    } catch {
+    const renderer = createRenderer()
+    if (!renderer) {
       el.innerHTML = '<span class="hint">3D preview unavailable in this browser</span>'
       return
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     el.appendChild(renderer.domElement)
 
     const scene = new THREE.Scene()
-    const colors = { ink: token('--ink', '#172b38'), accent: token('--orange', '#e66b3c'), rule: token('--rule-strong', '#d2d0c7') }
+    const colors = readTokens()
     const asset = buildAsset(kind, colors)
+    const parts = lineParts(asset)
+    applyDraw(parts, drawRef.current)
     scene.add(asset)
     const ground = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.RingGeometry(1.15, 1.16, 48)),
@@ -83,6 +81,7 @@ export default function WireframeAsset({ kind, height = 150, spin = true, yaw, l
     }
     startRef.current = start
     poseRef.current = (y) => { asset.rotation.y = y; renderer.render(scene, camera) }
+    drawFnRef.current = (p) => { applyDraw(parts, p); renderer.render(scene, camera) }
     const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; start() })
     io.observe(el)
 
@@ -90,7 +89,7 @@ export default function WireframeAsset({ kind, height = 150, spin = true, yaw, l
       io.disconnect()
       ro.disconnect()
       cancelAnimationFrame(frame)
-      scene.traverse((o) => { o.geometry?.dispose(); o.material?.dispose() })
+      disposeTree(scene)
       renderer.dispose()
       renderer.domElement.remove()
     }
@@ -100,6 +99,7 @@ export default function WireframeAsset({ kind, height = 150, spin = true, yaw, l
   useEffect(() => { spinRef.current = spin; startRef.current() }, [spin])
   // A controlled yaw (the video's scripted camera) updates the existing scene in place.
   useEffect(() => { yawRef.current = yaw; if (yaw != null) poseRef.current(yaw) }, [yaw])
+  useEffect(() => { drawRef.current = draw; drawFnRef.current(draw) }, [draw])
 
   return (
     <div ref={ref} className="wireframe" role="img" aria-label={label || `Wireframe of ${kind.replace('_', ' ')}`} style={{ height }}>

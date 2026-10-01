@@ -7,3 +7,5 @@ __pycache__/
 .npm-cache/
 web/node_modules/
 web/dist/
+video/node_modules
+video/out
