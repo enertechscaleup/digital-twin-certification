@@ -141,19 +141,22 @@ function substation(g, ink, accent) {
 }
 
 function dataCenter(g, ink, accent) {
-  part(g, box(2.2, 0.55, 1.0), ink, { at: [0, -0.25, 0] })
+  // A tall hall with a stepped upper storey; cooling units on the upper roof, exhaust stacks
+  // behind and a generator yard in front distinguish it from the low battery containers.
+  part(g, box(2.4, 0.8, 1.1), ink, { at: [0, -0.12, 0] })
+  for (let i = 1; i < 6; i++) part(g, box(0.004, 0.76, 1.08), ink, { at: [-1.2 + i * 0.4, -0.12, 0] })
+  part(g, box(1.7, 0.26, 0.82), ink, { at: [-0.2, 0.41, 0] })
   for (let i = 0; i < 6; i++) {
-    const x = -0.85 + i * 0.34
-    part(g, box(0.24, 0.1, 0.3), ink, { at: [x, 0.08, -0.2] })
-    part(g, cyl(0.08, 0.02, 12), ink, { at: [x, 0.14, -0.2] })
-    part(g, box(0.24, 0.1, 0.3), ink, { at: [x, 0.08, 0.22] })
-    part(g, cyl(0.08, 0.02, 12), ink, { at: [x, 0.14, 0.22] })
+    for (const z of [-0.2, 0.2]) {
+      const x = -0.92 + i * 0.29
+      part(g, box(0.2, 0.08, 0.24), ink, { at: [x, 0.58, z] })
+      part(g, cyl(0.075, 0.02, 12), ink, { at: [x, 0.63, z] })
+    }
   }
-  for (let i = 0; i < 4; i++) part(g, box(0.22, 0.2, 0.34), ink, { at: [-0.8 + i * 0.32, -0.42, 0.75] })
-  part(g, box(0.3, 0.4, 0.3), accent, { at: [1.3, -0.32, 0] })
-  part(g, box(0.004, 0.4, 0.95), ink, { at: [0.35, -0.25, 0] })
-  part(g, box(0.004, 0.4, 0.95), ink, { at: [-0.35, -0.25, 0] })
-  part(g, box(3.0, 0.03, 2.0), ink, { at: [0.1, -0.53, 0.2] })
+  for (const x of [0.75, 0.9, 1.05]) part(g, cyl(0.05, 0.75, 10), ink, { at: [x, 0.65, -0.38], threshold: 1 })
+  for (let i = 0; i < 5; i++) part(g, box(0.26, 0.22, 0.36), ink, { at: [-0.95 + i * 0.4, -0.41, 0.95] })
+  part(g, box(0.34, 0.5, 0.36), accent, { at: [1.45, -0.27, 0] })
+  part(g, box(3.4, 0.03, 2.3), ink, { at: [0.15, -0.53, 0.3] })
 }
 
 export const ASSET_KINDS = {

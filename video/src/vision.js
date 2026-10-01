@@ -13,8 +13,8 @@ export const VISION = {
       graph: { offset: [2.2, 2.6, -1.0], scale: 1.9, yaw: -0.35, seed: 23, appear: [11.8 * S, 13 * S] } },
     { id: 'sub', kind: 'substation', at: [1.2, -1.2], scale: 1.5, yaw: 0.1, draw: [15 * S, 17 * S],
       graph: { offset: [2.0, 3.0, -1.1], scale: 1.9, yaw: -0.35, seed: 37, appear: [16.8 * S, 18 * S] } },
-    { id: 'dc', kind: 'data_center', at: [7.8, 1.6], scale: 2.0, yaw: -0.2, draw: [20 * S, 23 * S],
-      graph: { offset: [2.8, 3.6, -1.6], scale: 2.4, yaw: -0.35, seed: 53, appear: [22.6 * S, 24 * S] } },
+    { id: 'dc', kind: 'data_center', at: [9.2, 1.4], scale: 2.4, yaw: -0.2, draw: [20 * S, 23 * S],
+      graph: { offset: [3.6, 5.0, -2.0], scale: 2.6, yaw: -0.35, seed: 53, appear: [22.6 * S, 24 * S] } },
   ],
   links: [
     { from: 'geo', to: 'bat', appear: [12 * S, 13.5 * S] },
@@ -29,9 +29,9 @@ export const VISION = {
     { f: 9 * S, pos: [-7.4, 4.6, 10.5], look: [-7.6, 2.0, -0.5] },
     { f: 14 * S, pos: [-4.2, 5.2, 12.5], look: [-5.4, 1.8, 0.4] },
     { f: 19 * S, pos: [0.4, 5.8, 13.5], look: [-1.2, 1.8, 0.2] },
-    { f: 25 * S, pos: [3.6, 6.4, 15], look: [1.4, 1.8, 0.4] },
-    { f: 28.4 * S, pos: [1.3, 12.8, 25.5], look: [1.3, 1.9, 0.2] },
-    { f: 30 * S, pos: [1.3, 12.8, 25.5], look: [1.3, 1.9, 0.2] },
+    { f: 25 * S, pos: [7.4, 7.6, 19], look: [6.2, 2.4, 0.4] },
+    { f: 28.4 * S, pos: [2.2, 13.6, 27.5], look: [2.2, 2.2, 0.2] },
+    { f: 30 * S, pos: [2.2, 13.6, 27.5], look: [2.2, 2.2, 0.2] },
   ],
   flow: { speed: 0.011 },
 }

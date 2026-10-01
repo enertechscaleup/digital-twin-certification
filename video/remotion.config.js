@@ -6,6 +6,7 @@ const here = path.resolve()
 
 Config.setVideoImageFormat('jpeg')
 Config.setCodec('h264')
+Config.setColorSpace('bt709') // standard-range yuv420p with BT.709 tags, for players and upload sites
 // WebGL in headless Chrome: ANGLE uses the machine's GPU; fall back to --gl=swangle if it fails.
 Config.setChromiumOpenGlRenderer('angle')
 
