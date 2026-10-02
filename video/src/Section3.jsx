@@ -19,9 +19,11 @@ const SHOTS = [
   { id: 's3_1', at: 1350, len: 390 },
   { id: 's3_2', at: 1740, len: 360 },
   { id: 's4_1', at: 2100, len: 300, segments: [[1.0, 11.0, 1]] },
-  // The re-verify round trip to the bucket (7.5 s → 14.8 s) is shortened to half a second;
-  // the result on screen still reports the real time it took.
-  { id: 's4_2', at: 2400, len: 300, segments: [[0.8, 8.3, 1], [8.3, 14.6, 12.6], [14.6, 16.6, 1]] },
+  // The re-verify round trip to the bucket (8.7 s → 15.5 s) is shortened to half a second;
+  // the result on screen still reports the real time it took. While the camera is close in,
+  // sharp double-resolution stills taken during the same still moments replace the capture.
+  { id: 's4_2', at: 2400, len: 300, segments: [[1.1, 8.7, 1], [8.7, 15.5, 13.6], [15.5, 17.4, 1]],
+    stills: [{ from: 3.0, to: 5.8, file: 'hold_ledger.png' }, { from: 15.6, to: 99, file: 'hold_integrity.png' }] },
 ]
 export const SECTION3_FRAMES = 2700
 
@@ -37,16 +39,17 @@ function sourceTime(segments, f) {
   return to
 }
 
-function Screencast({ shot, segments, camera }) {
+function Screencast({ shot, segments, camera, stills = [] }) {
   const f = useCurrentFrame()
   const frames = DATA[shot].frames
   const t = sourceTime(segments, f)
   let i = 0
   while (i + 1 < frames.length && frames[i + 1].t <= t) i++
   const view = camera ? camera(f) : { s: 1, x: 0, y: 0 }
+  const still = stills.find((w) => t >= w.from && t < w.to)
   return (
     <AbsoluteFill style={{ background: TOKENS.paper, overflow: 'hidden' }}>
-      <Img src={staticFile(`s3/${shot}/${frames[i].file}`)}
+      <Img src={staticFile(`s3/${shot}/${still ? still.file : frames[i].file}`)}
         style={{ width: 1920, height: 1080, transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transformOrigin: '0 0' }} />
     </AbsoluteFill>
   )
@@ -116,9 +119,9 @@ const LEDGER = { x: 1258, y: 125, width: 364, height: 532 }
 const INTEGRITY = { x: 298, y: 448, width: 432, height: 460 }
 const camera42 = (f) => {
   const ledger = fit(LEDGER, 1.1), integrity = fit(INTEGRITY, 1.12)
-  if (f < 126) return blend(FULL, ledger, interpolate(f, [8, 36], [0, 1], { ...clamp, easing: ease }))
-  if (f < 177) return blend(ledger, FULL, interpolate(f, [126, 152], [0, 1], { ...clamp, easing: ease }))
-  return blend(FULL, integrity, interpolate(f, [177, 205], [0, 1], { ...clamp, easing: ease }))
+  if (f < 140) return blend(FULL, ledger, interpolate(f, [4, 32], [0, 1], { ...clamp, easing: ease }))
+  if (f < 186) return blend(ledger, FULL, interpolate(f, [140, 164], [0, 1], { ...clamp, easing: ease }))
+  return blend(FULL, integrity, interpolate(f, [186, 214], [0, 1], { ...clamp, easing: ease }))
 }
 
 function Caption({ opacity, children }) {
@@ -145,7 +148,7 @@ function Title() {
 
 function Shot({ shot }) {
   if (shot.id === 'title') return <Title />
-  if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} camera={shot.id === 's4_2' ? camera42 : null} />
+  if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} stills={shot.stills} camera={shot.id === 's4_2' ? camera42 : null} />
   if (shot.id === 's2_1') return <Ticked shot="s2_1" len={shot.len} />
   if (shot.id === 's3_1') return <Ticked shot="s3_1" len={shot.len} hold={30} camera={camera31} />
   return (

@@ -45,7 +45,7 @@ async function click(page, loc, ms = 900) {
   await page.mouse.down(); await sleep(90); await page.mouse.up()
 }
 
-async function screencast(context, page, shot, run) {
+async function screencast(context, page, shot, run, scale = 1) {
   const dir = path.join(OUT, shot)
   await rm(dir, { recursive: true, force: true })
   await mkdir(dir, { recursive: true })
@@ -60,7 +60,7 @@ async function screencast(context, page, shot, run) {
     await writeFile(path.join(dir, file), Buffer.from(f.data, 'base64'))
     await cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {})
   })
-  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920, maxHeight: 1080, everyNthFrame: 1 })
+  await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 92, maxWidth: 1920 * scale, maxHeight: 1080 * scale, everyNthFrame: 1 })
   const started = Date.now()
   await run()
   await cdp.send('Page.stopScreencast')
@@ -101,15 +101,16 @@ async function ticked(browser, shot, { url, from, to, tab, focus, scrollTo }) {
   await context.close()
 }
 
-async function interaction(browser, shot, prepare, act) {
-  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 })
+// ``scale`` 2 records at double resolution, for shots the video zooms into.
+async function interaction(browser, shot, prepare, act, scale = 1) {
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: scale })
   await context.addInitScript(POINTER)
   const page = await context.newPage()
   mouse = { x: 960, y: 640 }
   await prepare(page)
   await page.mouse.move(mouse.x, mouse.y)
   await sleep(300)
-  await screencast(context, page, shot, () => act(page))
+  await screencast(context, page, shot, () => act(page), scale)
   await context.close()
 }
 
@@ -186,13 +187,14 @@ const SHOTS = {
   }, async (p) => {
     await sleep(1000)
     await click(p, p.locator('.ledger-row', { hasText: 'Post-state check' }).first(), 1000)
-    await sleep(2600)
+    // Sharp stills of the two moments the video zooms into (the screen is still meanwhile).
+    await sleep(700); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_ledger.png') }); await sleep(1500)
     await p.evaluate(() => { const el = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Evidence integrity')); window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 200, behavior: 'smooth' }) })
     await sleep(1400)
     await click(p, p.getByRole('button', { name: /Re-verify now/ }), 900)
     await p.getByText(/just now in/).waitFor({ timeout: 60000 })
-    await sleep(2400)
-  }),
+    await sleep(400); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_integrity.png') }); await sleep(1700)
+  }, 2),
 }
 
 const wanted = process.argv.slice(2).length ? process.argv.slice(2) : Object.keys(SHOTS)
