@@ -25,14 +25,16 @@ function Wordmark({ size = 54 }) {
 // Section 4 — Close (2:30–3:00). Returns to Section 1's closing frame: the same scene and
 // camera, held, with data still flowing; now labelled TwinEvidence. The longer message
 // in the brief is left for the narration; on screen: the wordmark and the closing line.
-export function Section4() {
+export function Section4({ length }) {
   const frame = useCurrentFrame()
-  const { width, height, durationInFrames } = useVideoConfig()
+  const { width, height, durationInFrames: full } = useVideoConfig()
+  const durationInFrames = length || full
   const ease = Easing.bezier(0.23, 1, 0.32, 1)
   const sceneIn = interpolate(frame, [0, 45], [0, 1], clamp)
   const markIn = interpolate(frame, [30, 75], [0, 1], { ...clamp, easing: ease })
-  const line1 = interpolate(frame, [300, 340], [0, 1], { ...clamp, easing: ease })
-  const line2 = interpolate(frame, [360, 400], [0, 1], { ...clamp, easing: ease })
+  // The closing line lands after the narration ends (about 18 s in), then holds to the end.
+  const line1 = interpolate(frame, [552, 588], [0, 1], { ...clamp, easing: ease })
+  const line2 = interpolate(frame, [588, 624], [0, 1], { ...clamp, easing: ease })
   const out = interpolate(frame, [durationInFrames - 36, durationInFrames - 1], [1, 0], clamp)
 
   return (

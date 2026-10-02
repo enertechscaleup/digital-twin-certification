@@ -11,21 +11,25 @@ const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
 const FADE = 8
 
 // Shot list (approved): start frame, length, and how each recording maps onto it.
+// Beat 4 shows the ledger and integrity (4.2) before composition (4.1), so the locked Beat 4
+// narration lands on each: "tamper-evident ledger" over 4.2, "which vendor's twin diverged,
+// and which didn't" over 4.1. The title card is 1 s (chrome trimmed for a 2:55 cut).
 const SHOTS = [
-  { id: 'title', at: 0, len: 60 },
-  { id: 's1_1', at: 60, len: 390, segments: [[1.6, 14.6, 1]] },
-  { id: 's2_1', at: 450, len: 450 },
-  { id: 's2_2', at: 900, len: 450, segments: [[0.8, 15.8, 1]] },
-  { id: 's3_1', at: 1350, len: 390 },
-  { id: 's3_2', at: 1740, len: 360 },
-  { id: 's4_1', at: 2100, len: 300, segments: [[1.0, 11.0, 1]] },
+  { id: 'title', at: 0, len: 30 },
+  { id: 's1_1', at: 30, len: 390, segments: [[1.6, 14.6, 1]] },
+  { id: 's2_1', at: 420, len: 450 },
+  { id: 's2_2', at: 870, len: 450, segments: [[0.8, 15.8, 1]] },
+  { id: 's3_1', at: 1320, len: 390 },
+  { id: 's3_2', at: 1710, len: 360 },
   // The re-verify round trip to the bucket (8.7 s → 15.5 s) is shortened to half a second;
   // the result on screen still reports the real time it took. While the camera is close in,
   // sharp double-resolution stills taken during the same still moments replace the capture.
-  { id: 's4_2', at: 2400, len: 300, segments: [[1.1, 8.7, 1], [8.7, 15.5, 13.6], [15.5, 17.4, 1]],
+  { id: 's4_2', at: 2070, len: 300, segments: [[1.1, 8.7, 1], [8.7, 15.5, 13.6], [15.5, 17.4, 1]],
     stills: [{ from: 3.0, to: 5.8, file: 'hold_ledger.png' }, { from: 15.6, to: 99, file: 'hold_integrity.png' }] },
+  { id: 's4_1', at: 2370, len: 300, segments: [[1.0, 11.0, 1]] },
 ]
-export const SECTION3_FRAMES = 2700
+export const SECTION3_FRAMES = 2670
+export const SECTION3_SHOTS = SHOTS
 
 /** Source time (s) in a recording for a local frame, through [from, to, speed] segments. */
 function sourceTime(segments, f) {
