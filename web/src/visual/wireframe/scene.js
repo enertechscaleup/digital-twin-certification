@@ -9,17 +9,60 @@ import { applyDraw, lineParts } from './renderer.js'
 // Everything on screen is a pure function of ``frame``, so a render is reproducible.
 //
 // scene = {
-//   objects: [{ id, kind, at: [x, z], scale, yaw, draw: [f0, f1],
-//               graph: { offset: [dx, dy, dz], nodes, seed, appear: [f0, f1] } }],
-//   links:   [{ from, to, appear: [f0, f1] }],
-//   camera:  [{ f, pos: [x, y, z], look: [x, y, z] }],
-//   flow:    { speed }            // data pulses per frame along each curve (0..1 of its length)
+//   objects:    [{ id, kind, at: [x, z], scale, yaw, draw: [f0, f1],
+//                  graph: { offset: [dx, dy, dz], nodes, seed, appear: [f0, f1] },
+//                  focus: [[f, brightness], ...] }],          // optional: dim/highlight over time
+//   links:      [{ from, to, appear: [f0, f1], hide: [f0, f1] }],   // hide is optional
+//   governance: [{ members: [ids], appear: [f0, f1], hide: [f0, f1], height, z }],  // optional
+//   camera:     [{ f, pos: [x, y, z], look: [x, y, z] }],
+//   flow:       { speed },         // data pulses per frame along each curve (0..1 of its length)
+//   grid:       { size },          // optional, default 40
 // }
-// colors = { line, graph, flow, grid }  (hex strings)
+// colors = { line, graph, flow, grid, governance }  (hex strings)
+//
+// The governance layer belongs to the system owner, not to any vendor: it is drawn as a
+// separate dashed rail raised above the member twins' graphs, with dashed drops to each
+// graph, so it never sits inside a vendor's twin.
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v))
 const ramp = ([f0, f1], f) => clamp01((f - f0) / Math.max(1, f1 - f0))
 const ease = (t) => t * t * (3 - 2 * t)
+const shown = (s, frame) => ease(ramp(s.appear, frame)) * (s.hide ? 1 - ease(ramp(s.hide, frame)) : 1)
+
+/** Piecewise-linear value from [[frame, value], ...] keyframes; 1 when there are none. */
+export function keyed(keys, frame) {
+  if (!keys?.length) return 1
+  if (frame <= keys[0][0]) return keys[0][1]
+  for (let i = 1; i < keys.length; i++) {
+    if (frame <= keys[i][0]) {
+      const [f0, v0] = keys[i - 1], [f1, v1] = keys[i]
+      return v0 + (v1 - v0) * ease(clamp01((frame - f0) / Math.max(1, f1 - f0)))
+    }
+  }
+  return keys[keys.length - 1][1]
+}
+
+/** Camera position and target at ``frame``, eased between keyframes. */
+export function cameraAt(spec, frame) {
+  const keys = spec.camera
+  let i = keys.findIndex((k) => k.f > frame)
+  if (i === -1) i = keys.length
+  const a = keys[Math.max(0, i - 1)], b = keys[Math.min(keys.length - 1, i)]
+  const t = a === b ? 0 : ease(clamp01((frame - a.f) / (b.f - a.f)))
+  const lerp = (u, v) => u.map((x, j) => x + (v[j] - x) * t)
+  return { pos: lerp(a.pos, b.pos), look: lerp(a.look, b.look) }
+}
+
+/** Where a world point lands on screen at ``frame`` (for text labels laid over the canvas). */
+export function projectPoint(spec, frame, point, width, height, fov = 32) {
+  const cam = new THREE.PerspectiveCamera(fov, width / height, 0.1, 200)
+  const { pos, look } = cameraAt(spec, frame)
+  cam.position.set(...pos)
+  cam.lookAt(...look)
+  cam.updateMatrixWorld()
+  const v = new THREE.Vector3(...point).project(cam)
+  return { x: ((v.x + 1) / 2) * width, y: ((1 - v.y) / 2) * height, visible: v.z < 1 }
+}
 
 function rng(seed) {
   let s = seed >>> 0 || 1
@@ -79,7 +122,8 @@ function curveLine(curve, material, points = 40) {
 
 export function buildScene(spec, colors) {
   const scene = new THREE.Scene()
-  const grid = new THREE.GridHelper(40, 40, colors.grid, colors.grid)
+  const size = spec.grid?.size || 40
+  const grid = new THREE.GridHelper(size, size, colors.grid, colors.grid)
   grid.material.transparent = true
   grid.material.opacity = 0.22
   scene.add(grid)
@@ -96,6 +140,8 @@ export function buildScene(spec, colors) {
     scene.add(holder)
     const parts = lineParts(holder)
     applyDraw(parts, 0)
+    const materials = [...new Set(parts.map((p) => p.material))]
+    if (o.focus) for (const m of materials) m.transparent = true
     const box = new THREE.Box3().setFromObject(holder)
 
     let graph = null
@@ -119,11 +165,11 @@ export function buildScene(spec, colors) {
         const line = curveLine(curve, flowMat)
         scene.add(line)
         curves.push(curve)
-        flows.push({ curve, appear: o.graph.appear, phase: i / 3, reverse: i === 1 })
+        flows.push({ curve, appear: o.graph.appear, phase: i / 3, reverse: i === 1, owner: o.id })
       })
       graph.userData.flowMat = flowMat
     }
-    objects[o.id] = { spec: o, holder, parts, graph, box }
+    objects[o.id] = { spec: o, holder, parts, materials, graph, box }
   }
 
   const links = []
@@ -136,8 +182,51 @@ export function buildScene(spec, colors) {
     const line = curveLine(curve, new THREE.LineBasicMaterial({ color: colors.line, transparent: true, opacity: 0.75 }), 60)
     scene.add(line)
     links.push({ spec: l, line })
-    flows.push({ curve, appear: l.appear, phase: 0, reverse: false, link: true })
+    flows.push({ curve, appear: l.appear, hide: l.hide, phase: 0, reverse: false, link: true })
   }
+
+  const governance = []
+  for (const g of spec.governance || []) {
+    const mat = new THREE.LineDashedMaterial({ color: colors.governance, dashSize: 0.32, gapSize: 0.18, transparent: true, opacity: 0 })
+    const tops = g.members.map((id) => {
+      const m = objects[id]
+      const b = new THREE.Box3().setFromObject(m.graph || m.holder)
+      return new THREE.Vector3((b.min.x + b.max.x) / 2, b.max.y, (b.min.z + b.max.z) / 2)
+    }).sort((p, q) => p.x - q.x)
+    // One straight rail at a single height and depth, behind the members: it never weaves
+    // between (or appears to pass through) the vendors' twins.
+    const railY = g.height ?? Math.max(...tops.map((p) => p.y)) + (g.lift ?? 1.4)
+    const railZ = g.z ?? Math.min(...tops.map((p) => p.z)) - 0.8
+    const railPts = tops.map((p) => new THREE.Vector3(p.x, railY, railZ))
+    const railCurve = new THREE.LineCurve3(railPts[0], railPts[railPts.length - 1])
+    const group = new THREE.Group()
+    for (const dy of [0, 0.32]) {
+      const rail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(railCurve.getPoints(80).map((p) => p.clone().setY(p.y + dy))), mat)
+      rail.computeLineDistances()
+      group.add(rail)
+    }
+    const drops = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(
+      tops.flatMap((p) => [new THREE.Vector3(p.x, railY, railZ), new THREE.Vector3(p.x, p.y + 0.15, p.z)])), mat)
+    drops.computeLineDistances()
+    group.add(drops)
+    for (const p of railPts) {
+      const d = 0.16
+      const diamond = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(p.x - d, p.y + 0.16, p.z), new THREE.Vector3(p.x, p.y + 0.16 + d, p.z),
+        new THREE.Vector3(p.x + d, p.y + 0.16, p.z), new THREE.Vector3(p.x, p.y + 0.16 - d, p.z)]), mat)
+      group.add(diamond)
+    }
+    scene.add(group)
+    governance.push({ spec: g, group, mat, curve: railCurve, parts: lineParts(group), railY })
+  }
+  const govPositions = new Float32Array(Math.max(1, governance.length) * 4 * 3)
+  const govGeo = new THREE.BufferGeometry()
+  govGeo.setAttribute('position', new THREE.BufferAttribute(govPositions, 3))
+  const govPulses = new THREE.Points(govGeo, new THREE.PointsMaterial({
+    color: colors.governance || colors.flow, size: 10, sizeAttenuation: false, map: pulseTex, transparent: true, alphaTest: 0.05, depthWrite: false,
+  }))
+  govPulses.frustumCulled = false
+  if (governance.length) scene.add(govPulses)
 
   const pulsePositions = new Float32Array(flows.length * 3 * 3)
   const pulseGeo = new THREE.BufferGeometry()
@@ -148,26 +237,41 @@ export function buildScene(spec, colors) {
   pulses.frustumCulled = false
   scene.add(pulses)
 
-  return { scene, objects, links, flows, pulses, pulsePositions }
+  return { scene, objects, links, flows, pulses, pulsePositions, governance, govPulses, govPositions }
 }
 
 /** Put the built scene into its state at ``frame`` (and the camera into position). */
 export function poseScene(built, spec, camera, frame) {
-  for (const { spec: o, parts, graph } of Object.values(built.objects)) {
+  const focus = {}
+  for (const { spec: o, parts, materials, graph } of Object.values(built.objects)) {
     applyDraw(parts, ease(ramp(o.draw, frame)))
+    const b = focus[o.id] = keyed(o.focus, frame)
+    if (o.focus) for (const m of materials) m.opacity = b
     if (graph) {
       const g = ease(ramp(o.graph.appear, frame))
-      graph.userData.material.opacity = 0.85 * g
-      graph.userData.flowMat.opacity = 0.55 * g
+      graph.userData.material.opacity = 0.85 * g * b
+      graph.userData.flowMat.opacity = 0.55 * g * b
     }
   }
   for (const { spec: l, line } of built.links) {
     const n = line.geometry.getAttribute('position').count
-    line.geometry.setDrawRange(0, Math.round(ease(ramp(l.appear, frame)) * n))
+    line.geometry.setDrawRange(0, Math.round((l.hide ? shown(l, frame) : ease(ramp(l.appear, frame))) * n))
   }
   const speed = spec.flow?.speed ?? 0.012
+  built.governance.forEach(({ spec: g, mat, parts, curve }, gi) => {
+    applyDraw(parts, ease(ramp(g.appear, frame)))
+    const v = shown(g, frame)
+    mat.opacity = v
+    const on = frame >= g.appear[1] && v > 0.5
+    for (let k = 0; k < 4; k++) {
+      const t = (frame * speed * 0.8 + k / 4) % 1
+      const p = on ? curve.getPoint(t).setY(curve.getPoint(t).y + 0.16) : new THREE.Vector3(0, -100, 0)
+      built.govPositions.set([p.x, p.y, p.z], (gi * 4 + k) * 3)
+    }
+  })
+  if (built.governance.length) built.govPulses.geometry.getAttribute('position').needsUpdate = true
   built.flows.forEach((f, i) => {
-    const on = frame >= f.appear[1]
+    const on = frame >= f.appear[1] && (!f.hide || frame < f.hide[0]) && (!f.owner || focus[f.owner] > 0.6)
     for (let k = 0; k < 3; k++) {
       let t = (frame * speed * (f.link ? 0.7 : 1) + f.phase + k / 3) % 1
       if (f.reverse) t = 1 - t
@@ -177,12 +281,7 @@ export function poseScene(built, spec, camera, frame) {
   })
   built.pulses.geometry.getAttribute('position').needsUpdate = true
 
-  const keys = spec.camera
-  let i = keys.findIndex((k) => k.f > frame)
-  if (i === -1) i = keys.length
-  const a = keys[Math.max(0, i - 1)], b = keys[Math.min(keys.length - 1, i)]
-  const t = a === b ? 0 : ease(clamp01((frame - a.f) / (b.f - a.f)))
-  const lerp = (u, v) => u.map((x, j) => x + (v[j] - x) * t)
-  camera.position.set(...lerp(a.pos, b.pos))
-  camera.lookAt(...lerp(a.look, b.look))
+  const { pos, look } = cameraAt(spec, frame)
+  camera.position.set(...pos)
+  camera.lookAt(...look)
 }

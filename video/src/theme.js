@@ -20,4 +20,7 @@ export const TOKENS = {
 
 // Scene colours on the dark background: assets in paper, their graphs in a quiet
 // blue-grey, data flow in the brand orange.
-export const SCENE_COLORS = { line: TOKENS.paper, graph: '#9fb2bc', flow: TOKENS.orangeBright, grid: '#26404f' }
+export const SCENE_COLORS = { line: TOKENS.paper, graph: '#9fb2bc', flow: TOKENS.orangeBright, grid: '#26404f',
+  // The system owner's governance layer (Section 2): a warm sand, distinct from the vendors'
+  // twins (paper), their graphs (blue-grey) and data flow (orange). Not a status colour.
+  governance: '#dcbd8e' }
