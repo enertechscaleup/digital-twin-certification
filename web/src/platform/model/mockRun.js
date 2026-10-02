@@ -36,7 +36,7 @@ export function mockRun(project, run) {
   const snapshots = []
   const ledger = []
   let seq = 0
-  const log = (tick, type, text, twin) => ledger.push({ seq: seq++, tick, type, text, twin, hash: hashish(seq, tick, type) })
+  const log = (tick, type, text, twin) => ledger.push({ seq: seq++, tick, type, text, twin })
 
   log(0, 'run_started', `Run started: "${run.name}". Escalation rules recorded.`)
   for (const t of project.twins) {
@@ -144,10 +144,4 @@ export function mockRun(project, run) {
 
   log(ticks - 1, 'run_completed', 'Run completed')
   return { series, snapshots, ledger, sysId, ticks }
-}
-
-function hashish(seq, tick, type) {
-  let h = 2166136261
-  for (const ch of `${seq}:${tick}:${type}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0
-  return (h.toString(16) + (h * 2654435761 >>> 0).toString(16)).padStart(16, '0')
 }

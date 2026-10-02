@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, Braces, Link2, Pause, Play, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowUpRight, Braces, FlaskConical, Link2, Pause, Play, Sparkles } from 'lucide-react'
 import { ConfigDrawer, GapChart, Graph, InputChart, StatusPill } from './components.jsx'
 import { digitsFor, fmt } from './format.js'
 import { ESCALATION, TWIN_MODES, channelCount, layers, topology, twinByKey } from './model/projects.js'
@@ -78,7 +78,7 @@ function Operating({ project }) {
               {project.runs.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.ticks} ticks</option>)}
             </select>
           </label>
-          <span className="chip" title="In F3 this is the live 9-check verification of the real evidence"><ShieldCheck size={14} /> Evidence verified · 9/9</span>
+          <span className="chip" title="Preview projects replay mock data; there is no evidence to verify"><FlaskConical size={14} /> Mock replay · not verified</span>
         </Header>
       </div>
 
@@ -202,12 +202,12 @@ function Operating({ project }) {
               <div className="panel-pad"><Graph project={project} levels={levels} onPick={setSelected} selected={selected} compact /></div>
             </div>
             <div className="panel">
-              <div className="panel-head"><h2 className="label">Evidence ledger</h2><span className="small muted">Newest first · to tick {tick}</span></div>
+              <div className="panel-head"><h2 className="label">Mock event log</h2><span className="small muted">Preview · not a sealed ledger · to tick {tick}</span></div>
               <ul className="rule-list panel-pad" style={{ paddingBlock: 4 }}>
                 {ledger.map((e) => (
                   <li key={e.seq} className="ledger-row">
                     <span className="seq">#{e.seq}</span>
-                    <span>{e.text}<br /><code>tick {e.tick} · {e.hash.slice(0, 12)}…</code></span>
+                    <span>{e.text}<br /><code>tick {e.tick}</code></span>
                   </li>
                 ))}
               </ul>
@@ -221,8 +221,7 @@ function Operating({ project }) {
                   ))}
                 </div>
                 <div className="assistant-answer">
-                  Answers come only from the evidence up to tick {tick}{scope === 'twin' ? `, ${twin.name} only` : ''}, cite ledger entries, and never
-                  change an assurance decision. Connected to Gemini in F3.
+                  The assistant answers only from verified evidence, so it is not available for preview projects.
                 </div>
               </div>
             </div>
