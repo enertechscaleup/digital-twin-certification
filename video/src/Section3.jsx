@@ -37,13 +37,19 @@ function sourceTime(segments, f) {
   return to
 }
 
-function Screencast({ shot, segments }) {
+function Screencast({ shot, segments, camera }) {
   const f = useCurrentFrame()
   const frames = DATA[shot].frames
   const t = sourceTime(segments, f)
   let i = 0
   while (i + 1 < frames.length && frames[i + 1].t <= t) i++
-  return <Img src={staticFile(`s3/${shot}/${frames[i].file}`)} style={{ width: 1920, height: 1080 }} />
+  const view = camera ? camera(f) : { s: 1, x: 0, y: 0 }
+  return (
+    <AbsoluteFill style={{ background: TOKENS.paper, overflow: 'hidden' }}>
+      <Img src={staticFile(`s3/${shot}/${frames[i].file}`)}
+        style={{ width: 1920, height: 1080, transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transformOrigin: '0 0' }} />
+    </AbsoluteFill>
+  )
 }
 
 /** One screenshot per tick, dissolving into the next; ``camera`` zooms onto recorded boxes. */
@@ -103,6 +109,18 @@ function fitLeft(box, share = 0.6, margin = 1.1) {
 // caption takes the right, so it never covers the evidence it describes.
 const camera32 = (f, boxes) => blend(FULL, fitLeft(unite(boxes.channel, boxes.card)), interpolate(f, [10, 60], [0, 1], { ...clamp, easing: ease }))
 
+// 4.2: close on the Evidence ledger while an entry opens, pull back during the scroll,
+// then close on the Evidence integrity panel through the re-verify result. Boxes are the
+// panels' positions in the recording (CSS px of the 1920×1080 page).
+const LEDGER = { x: 1258, y: 125, width: 364, height: 532 }
+const INTEGRITY = { x: 298, y: 448, width: 432, height: 460 }
+const camera42 = (f) => {
+  const ledger = fit(LEDGER, 1.1), integrity = fit(INTEGRITY, 1.12)
+  if (f < 126) return blend(FULL, ledger, interpolate(f, [8, 36], [0, 1], { ...clamp, easing: ease }))
+  if (f < 177) return blend(ledger, FULL, interpolate(f, [126, 152], [0, 1], { ...clamp, easing: ease }))
+  return blend(FULL, integrity, interpolate(f, [177, 205], [0, 1], { ...clamp, easing: ease }))
+}
+
 function Caption({ opacity, children }) {
   return (
     <div style={{ position: 'absolute', left: 1210, right: 90, top: '50%', opacity, transform: `translateY(calc(-50% + ${(1 - opacity) * 12}px))`,
@@ -127,7 +145,7 @@ function Title() {
 
 function Shot({ shot }) {
   if (shot.id === 'title') return <Title />
-  if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} />
+  if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} camera={shot.id === 's4_2' ? camera42 : null} />
   if (shot.id === 's2_1') return <Ticked shot="s2_1" len={shot.len} />
   if (shot.id === 's3_1') return <Ticked shot="s3_1" len={shot.len} hold={30} camera={camera31} />
   return (
