@@ -30,7 +30,54 @@ export function placeCues() {
   })
 }
 
+// Music bed (Lyria, capture/music.mjs): cinematic under Sections 1–2, clean and confident from
+// Section 3. Clips overlap by 3 s and cross-fade; the bed ducks under every narration line.
+const CLIP = 32.7
+const XF = 3
+const BED = [
+  { id: 'a1', at: 0 }, { id: 'a2', at: CLIP - XF },
+  { id: 'b1', at: 59.5 }, { id: 'b2', at: 59.5 + CLIP - XF }, { id: 'b3', at: 59.5 + 2 * (CLIP - XF) }, { id: 'b4', at: 59.5 + 3 * (CLIP - XF) },
+]
+const OPEN = 0.75 // bed level with no narration (Section 1)
+const UNDER = 0.13 // bed level under narration (about -15 dB)
+const RAMP = 0.5 // seconds
+
+function bedGain(t, cues) {
+  // Duck while any line plays, ramping in RAMP seconds before it and out after it.
+  let duck = 0
+  for (const c of cues) {
+    const s = c.from / FPS, e = (c.from + c.frames) / FPS
+    const d = t < s - RAMP || t > e + RAMP ? 0 : t < s ? (t - (s - RAMP)) / RAMP : t > e ? 1 - (t - e) / RAMP : 1
+    duck = Math.max(duck, d)
+  }
+  return OPEN + (UNDER - OPEN) * duck
+}
+
+function clipGain(t, start, end, total) {
+  // Fades: crossfade in/out at clip joins, a 2 s fade-in at 0 and a 3 s fade-out at the end.
+  const fadeIn = start === 0 ? Math.min(1, t / 2) : Math.min(1, (t - start) / XF)
+  const fadeOut = end >= total ? Math.min(1, (total - t) / 3) : Math.min(1, (end - t) / XF)
+  return Math.max(0, Math.min(fadeIn, fadeOut))
+}
+
+function MusicBed({ cues }) {
+  const total = FULL_FRAMES / FPS
+  return BED.map((c, i) => {
+    const next = BED[i + 1]
+    const end = Math.min(total, next ? next.at + XF : total, c.at + CLIP)
+    return (
+      <Sequence key={c.id} from={Math.round(c.at * FPS)} durationInFrames={Math.round((end - c.at) * FPS)}>
+        <Audio src={staticFile(`music/${c.id}.wav`)} volume={(f) => {
+          const t = c.at + f / FPS
+          return clipGain(t, c.at, i === 1 ? 59.5 + XF : end, total) * bedGain(t, cues)
+        }} />
+      </Sequence>
+    )
+  })
+}
+
 export function Full() {
+  const cues = placeCues()
   return (
     <AbsoluteFill style={{ background: '#101f2a' }}>
       {SECTIONS.map((s) => (
@@ -38,7 +85,8 @@ export function Full() {
           {s.n === 1 ? <Section1 /> : s.n === 2 ? <Section2 /> : s.n === 3 ? <Section3 /> : <Section4 length={s.len} />}
         </Sequence>
       ))}
-      {placeCues().map((c) => (
+      <MusicBed cues={cues} />
+      {cues.map((c) => (
         <Sequence key={c.id} from={c.from} durationInFrames={c.frames}>
           <Audio src={staticFile(`vo/${c.id}.mp3`)} />
         </Sequence>
