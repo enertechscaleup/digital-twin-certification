@@ -21,6 +21,20 @@
         "--strictPort"
       ],
       "port": 5174
+    },
+    {
+      "name": "platform-gcs",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "EVIDENCE_SOURCE=gcs",
+        "EVIDENCE_BUCKET=dtc-evidence-ledger-46053a8a",
+        "GOOGLE_CLOUD_PROJECT=project-46053a8a-6324-40f0-ba8",
+        ".venv/bin/uvicorn",
+        "app.main:app",
+        "--port",
+        "8100"
+      ],
+      "port": 8100
     }
   ]
 }

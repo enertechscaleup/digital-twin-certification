@@ -10,6 +10,7 @@ export const serifItalic = loadSerif('italic', { weights: ['400'], subsets: ['la
 export const sans = loadSans('normal', { weights: ['500', '700', '800'], subsets: ['latin'] }).fontFamily
 
 export const TOKENS = {
+  ink: '#172b38',
   night: '#152a37',
   nightDeep: '#101f2a',
   paper: '#f4f2eb',

@@ -9,3 +9,4 @@ web/node_modules/
 web/dist/
 video/node_modules
 video/out
+video/public/s3
