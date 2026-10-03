@@ -12,6 +12,12 @@
    supersedes the old one. Every earlier entry stays exactly as it was.
    Fail: record the rejection; the old assurance and status stand.
 
+With lineage, the submitted twin is registered as a new version the moment it
+arrives, with the version in operation as its parent; every later entry cites it.
+A passing version goes into operation, the system twin is re-registered for its
+new constituent version, and a fresh composition record follows. A submission
+that reuses a version label for different content is rejected before any test.
+
 The owner (``recalibrator``) is passed in from outside: the engine never
 imports it, so the platform never builds or adjusts a twin itself.
 """
@@ -22,6 +28,7 @@ from dataclasses import replace
 from typing import Callable
 
 from engine.ledger import EvidenceLedger, sha256_hex
+from engine.lineage import LineageError
 from engine.monitor import FieldMonitor
 from engine.protocol import EscalationProtocol
 from engine.readings import gap_pct, is_valid_number
@@ -111,7 +118,9 @@ def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: Pr
     """Returns the recalibrated twin if a new assurance version was issued."""
     tid = product.operational_twin_id
     status = monitor.status[tid]
-    request = {"twin_id": tid, "assurance_id": status.assurance_id, "status": status.level, "at_tick": at_tick}
+    lineage = monitor.lineage
+    cite = monitor.cite(tid)  # the version in operation
+    request = {"twin_id": tid, "assurance_id": status.assurance_id, "status": status.level, "at_tick": at_tick, **cite}
     if status.level == "assured":
         ledger.append("recalibration_refused", timestamp, {**request, "reason": "twin is assured; nothing to recalibrate"})
         return None
@@ -133,36 +142,50 @@ def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: Pr
         "released_part": {"ticks": split["released_to_owner"], "readings": len(released),
                           "readings_sha256": sha256_hex(released)},
         "held_out_part": {"ticks": split["held_out"], "readings": len(held_out),
-                          "readings_sha256": sha256_hex(held_out)},
+                          "readings_sha256": sha256_hex(held_out)}, **cite,
     })
     ledger.append("recalibration_data_released", timestamp, {
         "twin_id": tid, "to": "twin owner", "vendor": product.vendor,
-        "readings_sha256": sha256_hex(released), "held_out_released": False,
+        "readings_sha256": sha256_hex(released), "held_out_released": False, **cite,
     })
 
     envelopes = {c.channel_id: (c.env_min, c.env_max) for c in product.inputs}
     submission = recalibrator(product.twin_type, current, [dict(r) for r in released], envelopes)
+    candidate = TwinModel(product.twin_type, submission["params"], submission["twin_version"])
+    restated = with_declared_outputs(product, submission["declared_output_ranges"])
+    node = None
+    if lineage:
+        try:
+            node = lineage.register_product(product.twin_type, restated, candidate, timestamp,
+                                            "twin owner (recalibration submission)", at_tick)
+        except LineageError as exc:
+            ledger.append("recalibration_rejected", timestamp, {
+                "twin_id": tid, "assurance_id": status.assurance_id, "status_unchanged": status.level,
+                "reason": str(exc), "submission_sha256": sha256_hex(submission), **cite,
+            })
+            return None
+    new = {"twin_ref": node.ref()} if node else {}
     ledger.append("recalibration_submitted", timestamp, {
         "twin_id": tid, "vendor": product.vendor, "submission": submission,
         "submission_sha256": sha256_hex(submission),
         "previous_twin_version": current.version, "previous_params": current.params,
+        **({"previous_ref": cite["twin_ref"], "candidate_ref": node.ref()} if node else {}),
     })
 
-    candidate = TwinModel(product.twin_type, submission["params"], submission["twin_version"])
-    restated = with_declared_outputs(product, submission["declared_output_ranges"])
     v = ledger.append("verification", timestamp, {
         **verify(restated, candidate, protocol), "twin_id": tid, "stage": "re-verification",
-        "previous_envelope": product.envelope_snapshot(),
+        "previous_envelope": product.envelope_snapshot(), **new,
     })
     h = ledger.append("held_out_validation", timestamp, {
         "twin_id": tid, "twin_version": candidate.version, "held_out_ticks": split["held_out"],
-        **held_out_validate(restated, candidate, held_out, protocol),
+        **held_out_validate(restated, candidate, held_out, protocol), **new,
     })
     if not (v["payload"]["passed"] and h["payload"]["passed"]):
         ledger.append("recalibration_rejected", timestamp, {
             "twin_id": tid, "assurance_id": status.assurance_id, "status_unchanged": status.level,
             "verification_passed": v["payload"]["passed"], "held_out_validation_passed": h["payload"]["passed"],
             "evidence_seq": [v["seq"], h["seq"]],
+            **({"twin_ref": cite["twin_ref"], "candidate_ref": node.ref()} if node else {}),
         })
         return None
 
@@ -172,13 +195,18 @@ def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: Pr
         "status": "assured", "twin_version": candidate.version, "supersedes": status.assurance_id,
         "effective_from_tick": at_tick, "effective_from": timestamp, "parent_twin_id": product.design_twin_id,
         "asset_id": product.asset_id, "twin_mode": product.twin_mode, "envelope": restated.envelope_snapshot(),
-        "evidence_seq": [v["seq"], h["seq"]],
+        "evidence_seq": [v["seq"], h["seq"]], **new,
     })
     ledger.append("assurance_superseded", timestamp, {
         "twin_id": tid, "old_assurance_id": status.assurance_id, "old_status_at_supersession": status.level,
         "new_assurance_id": new_id, "effective_from_tick": at_tick,
         "note": "prior assurance and its evidence remain in the ledger unchanged",
+        **({"previous_ref": cite["twin_ref"], "twin_ref": node.ref()} if node else {}),
     })
+    if node:
+        # The new version goes into operation; the system twin's content changed with it.
+        lineage.adopt(product.twin_type, node)
+        lineage.register_system(timestamp, "platform (recomposition after recalibration)", at_tick)
     monitor.reassure(tid, new_id, at_tick, timestamp)
     monitor.reassess_system(at_tick, timestamp)
     return candidate

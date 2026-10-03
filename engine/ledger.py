@@ -22,7 +22,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-LEDGER_FORMAT_VERSION = 1
+# 2: twin lineage -- versions are registered as their own entries and every entry cites the
+# exact twin version it is about (engine/lineage.py). Version 1 ledgers remain valid evidence.
+LEDGER_FORMAT_VERSION = 2
 GENESIS_HASH = "0" * 64
 
 

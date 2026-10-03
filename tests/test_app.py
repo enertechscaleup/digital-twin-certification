@@ -25,6 +25,8 @@ RUN = "assurance-demo_full_cycle-seed42"
 
 
 def build_pack(directory: Path) -> str:
+    """A fresh evidence pack for RUN in ``directory``, plus a ``runs.json`` there that pins it
+    (point RUNS_CONFIG at it). The served runs keep their own pins in app/config/runs.json."""
     s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "demo_full_cycle.json").read_text()))
     r = run_assurance(s, seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
                       ledger_path=directory / f"{RUN}.ledger.jsonl", recalibrator=owner_for_platform,
@@ -35,7 +37,13 @@ def build_pack(directory: Path) -> str:
     generate_artifacts(r.ledger.entries, r.readings, r.timeline, load_registry(), FakeGemini(),
                        on_artifact=lambda a: supplementary.record(sup, a))
     sup.close()
-    return write_manifest(directory, RUN, "demo_full_cycle")["core_ledger_head_hash"]
+    head = write_manifest(directory, RUN, "demo_full_cycle")["core_ledger_head_hash"]
+    cfg = load_runs_config()
+    for row in cfg["runs"]:
+        if row["run"] == RUN:
+            row["core_ledger_head_hash"] = head
+    (directory / "runs.json").write_text(json.dumps(cfg), encoding="utf-8")
+    return head
 
 
 class TestDashboardApi(unittest.TestCase):
@@ -45,6 +53,7 @@ class TestDashboardApi(unittest.TestCase):
         cls.dir = Path(cls.tmp.name)
         cls.head = build_pack(cls.dir)
         os.environ["EVIDENCE_SOURCE"], os.environ["EVIDENCE_DIR"] = "local", str(cls.dir)
+        os.environ["RUNS_CONFIG"] = str(cls.dir / "runs.json")
         main._cache.clear()
         main._verify_calls.clear()
         cls.client = TestClient(main.app)
@@ -52,16 +61,17 @@ class TestDashboardApi(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+        os.environ.pop("RUNS_CONFIG", None)
         main._cache.clear()
-
-    def test_regenerated_run_matches_the_pinned_fingerprint(self):
-        pin = next(r for r in load_runs_config()["runs"] if r["run"] == RUN)
-        self.assertEqual(self.head, pin["core_ledger_head_hash"], "app/config/runs.json pins are out of date")
 
     def test_meta_reports_verified_evidence(self):
         m = self.client.get(f"/api/runs/{RUN}/meta").json()
         self.assertTrue(m["verification"]["valid"])
-        self.assertEqual(len(m["verification"]["checks"]), 9)
+        self.assertEqual(len(m["verification"]["checks"]), 10)
+        self.assertIn("every twin version fingerprinted", m["verification"]["checks"][-1]["check"])
+        self.assertTrue(m["lineage"]["recorded"])
+        self.assertEqual([(v["composition"], v["version"]) for v in m["lineage"]["versions"]],
+                         [("product", "1.0.0"), ("product", "1.0.0"), ("system", "1"), ("product", "1.1.0"), ("system", "2")])
         self.assertEqual(m["ticks"], 80)
         self.assertIn("motor-op-001", m["twins"])
 
@@ -158,6 +168,8 @@ class TestDashboardApi(unittest.TestCase):
         self.assertEqual([(c["id"], c["unit"], c["direction"], c["declared_range"]) for c in motor["channels"]],
                          [(c["channel_id"], c["unit"], c["direction"], [c["envelope"]["min"], c["envelope"]["max"]]) for c in cfg["channels"]])
         self.assertEqual(motor["used_by"], ["oil-gas-compressor-train"])
+        self.assertEqual((motor["identity"], motor["version"]), ("twn_7qs95apgsg76zictyyed", "1.0.0"))
+        self.assertEqual(len(motor["fingerprint"]), 64)
 
     def test_unknown_project(self):
         self.assertEqual(self.client.get("/api/projects/nope").status_code, 404)

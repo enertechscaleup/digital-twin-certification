@@ -46,11 +46,13 @@ class TestAssistant(unittest.TestCase):
         head = build_pack(d)
         cls.ev = verify_run(LocalStore(d), RUN, "Full assurance cycle", head)
         os.environ["EVIDENCE_SOURCE"], os.environ["EVIDENCE_DIR"] = "local", str(d)
+        os.environ["RUNS_CONFIG"] = str(d / "runs.json")
         main._cache.clear()
 
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+        os.environ.pop("RUNS_CONFIG", None)
         main._cache.clear()
         main._chat = None
 

@@ -2,18 +2,33 @@
 
     python -m engine run --scenario scenarios/demo_wear_to_nullified.json
     python -m engine verify-ledger data/<run>.ledger.jsonl
+    python -m engine register-twins [--project projects/<project>.json]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from engine.ledger import load_ledger, verify_chain
+from engine.lineage import IDENTITIES, REGISTERED, register_identities
+from engine.registry import load_registry
 from engine.run import run_assurance, write_jsonl
+from projects import DEFAULT_PROJECT, load_project
 from telemetry.faults import Scenario
+
+
+def code_commit() -> str | None:
+    """The checked-out commit, marked -dirty if the working tree has uncommitted changes."""
+    try:
+        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return head + ("-dirty" if dirty else "")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -25,13 +40,17 @@ def cmd_run(args: argparse.Namespace) -> None:
     from vendor.advise import recommend
     from vendor.recalibrate import owner_for_platform
     result = run_assurance(Scenario.from_dict(raw), seed=args.seed, start_time=start, ledger_path=ledger_path,
-                           recalibrator=owner_for_platform, advisor=recommend)
+                           recalibrator=owner_for_platform, advisor=recommend, code_commit=code_commit())
     write_jsonl(result.timeline, args.out / f"{stem}.timeline.jsonl")
     write_jsonl(result.readings, args.out / f"{stem}.readings.jsonl")
 
     for e in result.ledger.entries:
         p = e["payload"]
-        if e["entry_type"] == "verification" and p.get("stage") == "re-verification":
+        if e["entry_type"] == REGISTERED:
+            parent = f"parent {p['parent_fingerprint'][:12]}" if p["parent_fingerprint"] else "first version"
+            print(f"[{e['seq']:3d}] version registered {p['twin']['identity']} v{p['twin']['version']:<8} "
+                  f"{p['twin']['fingerprint'][:12]}  {parent}")
+        elif e["entry_type"] == "verification" and p.get("stage") == "re-verification":
             print(f"[{e['seq']:3d}] re-verification  {p['twin_id']:<20} {'PASS' if p['passed'] else 'FAIL'} (twin {p['twin_version']})")
         elif e["entry_type"] in ("verification", "bench_validation"):
             print(f"[{e['seq']:3d}] {e['entry_type']:<16} {p['twin_id']:<20} {'PASS' if p['passed'] else 'FAIL'}")
@@ -90,6 +109,14 @@ def cmd_verify(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_register(args: argparse.Namespace) -> None:
+    project = load_project(args.project)
+    new = register_identities(load_registry(project), project.project_id, args.identities)
+    for r in new:
+        print(f"registered {r['identity']}  {r.get('design_twin_id') or r.get('design_system_twin_id')}")
+    print(f"{len(new)} new identities" if new else "every twin already has a permanent identity")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m engine", description="Deterministic assurance engine.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -102,6 +129,10 @@ def main() -> None:
     v = sub.add_parser("verify-ledger", help="check a ledger file's hash chain")
     v.add_argument("ledger", type=Path)
     v.set_defaults(func=cmd_verify)
+    g = sub.add_parser("register-twins", help="give each unregistered twin of a project its permanent identity")
+    g.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
+    g.add_argument("--identities", type=Path, default=IDENTITIES)
+    g.set_defaults(func=cmd_register)
     args = parser.parse_args()
     args.func(args)
 

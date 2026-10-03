@@ -46,6 +46,10 @@ class AdjustmentEpisode:
         self.recommendation: dict | None = None
         self.post: list[dict] = []
 
+    def _cite(self) -> dict:
+        """The exact version of the advising twin, when the run records lineage."""
+        return self.monitor.cite(self.product.operational_twin_id)
+
     # Readings for one tick, keyed (twin_id, channel_id).
     @staticmethod
     def _index(readings: list[dict]) -> dict:
@@ -70,7 +74,7 @@ class AdjustmentEpisode:
             self.ledger.append("adjustment_executed", ts, {
                 "episode_id": self.episode_id, "twin_id": self.product.operational_twin_id, "tick": tick,
                 "control_channel": rec["control_channel"], "setpoint": rec["to"],
-                "note": "executed once; the system then returns to passive monitoring",
+                "note": "executed once; the system then returns to passive monitoring", **self._cite(),
             })
 
     # -- steps ------------------------------------------------------------
@@ -79,7 +83,7 @@ class AdjustmentEpisode:
         self.state = "refused"
         self.ledger.append("adjustment_refused", ts, {
             "episode_id": self.episode_id, "twin_id": self.product.operational_twin_id, "tick": tick,
-            "reason": reason, **(extra or {})})
+            "reason": reason, **(extra or {}), **self._cite()})
 
     def _recommend(self, tick, ts, tick_readings, classifications, twin_model) -> None:
         p, tid = self.product, self.product.operational_twin_id
@@ -122,6 +126,7 @@ class AdjustmentEpisode:
             "setpoint_within_assured_range": {"passed": setpoint_ok, "assured_range": [control.env_min, control.env_max]},
             "predicted_objective_value": predicted_objective,
             "predicted_margin_above_objective": round(predicted_objective - self.objective_channel.env_min, 4),
+            **self._cite(),
         })
         if not setpoint_ok:
             return self._refuse(tick, ts, "recommended setpoint is outside the assured range of the control input",
@@ -135,7 +140,7 @@ class AdjustmentEpisode:
         self.ledger.append("adjustment_approval", ts, {
             "episode_id": self.episode_id, "twin_id": self.product.operational_twin_id, "tick": tick,
             "approver": a["approver"], "approval_type": "human", "decision": a["decision"],
-            "recommendation_entry_hash": self.recommendation_entry["entry_hash"],
+            "recommendation_entry_hash": self.recommendation_entry["entry_hash"], **self._cite(),
         })
         self.state = "approved" if approved else "declined"
 
@@ -165,4 +170,5 @@ class AdjustmentEpisode:
                           "met": len(met) == len(obj_values)},
             "statuses": {t: {"status": a.level, "assurance_id": a.assurance_id} for t, a in self.monitor.status.items()},
             "note": "Assurance status is sticky: returning an input to range does not by itself re-assure a twin.",
+            **self._cite(),
         })

@@ -142,9 +142,22 @@ class Toolbox:
 
     def get_evidence_integrity(self) -> dict:
         v = self.ev.verification
-        return {"valid": v["valid"], "checks": [c["check"] for c in v["checks"] if c["passed"]],
+        return {"valid": v["valid"], "checks": [c["check"] if c.get("applicable", True) else f"{c['check']}: {c['detail']}"
+                                                for c in v["checks"] if c["passed"]],
                 "source": v["source"], "core_ledger_head_hash": v["core_ledger_head_hash"][:16],
                 "note": "Checked when this evidence was loaded; the dashboard's Re-verify button re-checks it live."}
+
+    def get_twin_lineage(self, twin_id: str | None = None) -> dict:
+        state = state_at(self.ev, self.tick)
+        if not state["lineage_recorded"]:
+            return {"recorded": False, "note": "Pre-fingerprint evidence: recorded before twin lineage existed. Twins "
+                    "are identified by role ids and owner-declared version labels only; no content fingerprints."}
+        versions = [v for v in state["versions"]
+                    if self._visible(v.get("operational_twin_id") or v.get("operational_system_twin_id"))
+                    and (twin_id is None or twin_id in (v.get("operational_twin_id"), v.get("operational_system_twin_id")))]
+        return {"recorded": True, "versions": versions,
+                "note": "Each version: a permanent random identity, the owner's version label, a fingerprint of everything "
+                        "that determines the twin's behaviour, and its parent version. Every ledger entry cites one."}
 
     def call(self, name: str, args: dict) -> dict:
         fn = getattr(self, name, None) if name in TOOL_NAMES else None
@@ -160,7 +173,7 @@ def _trim(payload: dict, max_list: int = 12) -> dict:
     """Keep tool results small: drop bulky fields, shorten long lists."""
     out = {}
     for k, v in payload.items():
-        if k in ("twin_params", "previous_params", "envelope", "previous_envelope", "checks"):
+        if k in ("twin_params", "previous_params", "envelope", "previous_envelope", "checks", "fingerprint_inputs"):
             continue
         out[k] = v[:max_list] if isinstance(v, list) else v
     return out
@@ -189,6 +202,8 @@ TOOL_SCHEMAS = [
     {"name": "get_adjustment_episode", "description": "The semi-autonomous adjustment episode up to the current tick: pre-state and input-range check, the twin's recommendation and predicted end-state, the human approval, execution, and the post-state Sim2Real and objective checks.",
      "parameters": {"type": "object", "properties": {}}},
     {"name": "get_ai_explanations", "description": "Supplementary Gemini explanations already generated for status changes and sensor anomalies up to the current tick.",
+     "parameters": {"type": "object", "properties": {"twin_id": TWIN_ID}}},
+    {"name": "get_twin_lineage", "description": "Each twin's permanent identity and its versions up to the current tick: version label, content fingerprint, parent version, and for the system twin the exact constituent versions.",
      "parameters": {"type": "object", "properties": {"twin_id": TWIN_ID}}},
     {"name": "get_evidence_integrity", "description": "Result of the integrity checks run on this evidence (fingerprints, hash chains, AI anchors, sealed readings).",
      "parameters": {"type": "object", "properties": {}}},

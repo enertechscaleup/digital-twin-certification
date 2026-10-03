@@ -12,6 +12,7 @@ from pathlib import Path
 from engine import ENGINE_VERSION
 from engine.adjustment import Advisor, AdjustmentEpisode
 from engine.ledger import EvidenceLedger
+from engine.lineage import Lineage
 from engine.monitor import FieldMonitor
 from engine.protocol import EscalationProtocol
 from engine.readings import ingest
@@ -19,7 +20,7 @@ from engine.recalibration import Recalibrator, run_recalibration
 from engine.registry import Registry, load_registry
 from engine.validation import bench_validate
 from engine.verification import verify
-from projects import Project
+from projects import Project, load_project
 from telemetry.faults import Scenario
 from telemetry.generator import GENERATOR_VERSION, TelemetryGenerator
 
@@ -49,13 +50,19 @@ def run_assurance(
     recalibrator: Recalibrator | None = None,
     advisor: Advisor | None = None,
     project: Project | None = None,
+    identities: list[dict] | None = None,
+    code_commit: str | None = None,
 ) -> RunResult:
-    """``project`` defaults to the oil & gas compressor train (projects/compressor_train.json)."""
+    """``project`` defaults to the oil & gas compressor train (projects/compressor_train.json).
+    ``identities`` defaults to the platform's permanent twin identities (registry/identities.json);
+    ``code_commit`` is the commit the twins' formula identifiers refer to."""
     protocol = protocol or EscalationProtocol()
+    project = project or load_project()
     registry = registry or load_registry(project)
     gen = TelemetryGenerator(seed=seed, start_time=start_time, twins=twins, project=project)
     ts0 = gen._timestamp(0)
     ledger = EvidenceLedger(ledger_path)
+    lineage = Lineage(ledger, registry, project.project_id, identities, code_commit)
 
     ledger.append("run_started", ts0, {
         "engine_version": ENGINE_VERSION, "generator_version": GENERATOR_VERSION,
@@ -67,15 +74,19 @@ def run_assurance(
     all_assured = True
     for t, product in registry.products.items():
         model = gen.twins[t]
-        v = ledger.append("verification", ts0, verify(product, model, protocol))
+        # The version under test is sealed before any evidence about it.
+        node = lineage.register_product(t, product, model, ts0, "twin owner (registration)")
+        lineage.adopt(t, node)
+        cite = {"twin_ref": node.ref()}
+        v = ledger.append("verification", ts0, {**verify(product, model, protocol), **cite})
         bench = [ingest(asdict(r)) for batch in gen.bench_sweep(t) for r in batch]
-        b = ledger.append("bench_validation", ts0, bench_validate(product, bench))
+        b = ledger.append("bench_validation", ts0, {**bench_validate(product, bench), **cite})
         if not (v["payload"]["passed"] and b["payload"]["passed"]):
             all_assured = False
             ledger.append("assurance_refused", ts0, {
                 "twin_id": product.design_twin_id,
                 "verification_passed": v["payload"]["passed"], "bench_validation_passed": b["payload"]["passed"],
-                "evidence_seq": [v["seq"], b["seq"]],
+                "evidence_seq": [v["seq"], b["seq"]], **cite,
             })
             continue
         design_asr = _asr_id(product.design_twin_id)
@@ -83,28 +94,32 @@ def run_assurance(
             "assurance_id": design_asr, "twin_id": product.design_twin_id, "stage": "design",
             "composition": "product", "status": "assured", "twin_version": model.version,
             "twin_mode": product.twin_mode, "vendor": product.vendor,
-            "evidence_seq": [v["seq"], b["seq"]], "envelope": product.envelope_snapshot(),
+            "evidence_seq": [v["seq"], b["seq"]], "envelope": product.envelope_snapshot(), **cite,
         })
         product_ids[t] = _asr_id(product.operational_twin_id)
         ledger.append("assurance_issued", ts0, {
             "assurance_id": product_ids[t], "twin_id": product.operational_twin_id, "stage": "operational",
             "composition": "product", "status": "assured", "twin_version": model.version,
             "parent_twin_id": product.design_twin_id, "parent_assurance_id": design_asr,
-            "asset_id": product.asset_id, "twin_mode": product.twin_mode,
+            "asset_id": product.asset_id, "twin_mode": product.twin_mode, **cite,
         })
 
     if not all_assured:
-        ledger.append("run_completed", ts0, {"reason": "design-time assurance refused; no field monitoring"})
+        ledger.append("run_completed", ts0, {"reason": "design-time assurance refused; no field monitoring",
+                                             "final_refs": lineage.final_refs()})
         ledger.close()
         return RunResult(ledger, [], [], None, False)
 
     # A system twin can only be composed from assured product twins.
+    # Its version is sealed first, and each composition record cites every constituent by exact version.
     sys = registry.system
-    design_constituents = [_asr_id(registry.products[t].design_twin_id) for t in sys.constituents]
+    system_ref = lineage.register_system(ts0, "platform (composition)").ref()
+    design_ids = {t: _asr_id(registry.products[t].design_twin_id) for t in sys.constituents}
     ledger.append("composition_assured", ts0, {
         "composition_assurance_id": _asr_id(sys.design_system_twin_id), "system_twin_id": sys.design_system_twin_id,
-        "stage": "design", "constituent_assurance_ids": design_constituents,
+        "stage": "design", "constituent_assurance_ids": list(design_ids.values()),
         "output_constituents": list(sys.output_constituents),
+        "system_ref": system_ref, "constituent_refs": lineage.constituent_refs(design_ids, "design"),
     })
     system_asr = _asr_id(sys.operational_system_twin_id)
     ledger.append("composition_assured", ts0, {
@@ -112,10 +127,11 @@ def run_assurance(
         "stage": "operational", "parent_twin_id": sys.design_system_twin_id,
         "constituent_assurance_ids": [product_ids[t] for t in sys.constituents],
         "output_constituents": list(sys.output_constituents),
+        "system_ref": system_ref, "constituent_refs": lineage.constituent_refs(product_ids),
     })
 
     # Operation: field validation and escalation, tick by tick.
-    monitor = FieldMonitor(registry, protocol, ledger, product_ids, system_asr, checkpoint_every)
+    monitor = FieldMonitor(registry, protocol, ledger, product_ids, system_asr, checkpoint_every, lineage)
     readings: list[dict] = []
     timeline = []
     recal = scenario.recalibration
@@ -148,6 +164,7 @@ def run_assurance(
     ledger.append("run_completed", timeline[-1]["timestamp"] if timeline else ts0, {
         "ticks": len(timeline),
         "final_status": {tid: {"level": a.level, "assurance_id": a.assurance_id} for tid, a in monitor.status.items()},
+        "final_refs": lineage.final_refs(),
     })
     ledger.close()
     return RunResult(ledger, timeline, readings, monitor, True)

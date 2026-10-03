@@ -39,6 +39,14 @@ FORMULAS: dict[str, Callable[[Inputs, dict[str, float]], Outputs]] = {
     "compressor": _compressor,
 }
 
+# Each formula's declared identifier, sealed into every twin version's fingerprint. Changing
+# what a formula computes means declaring a new identifier here, never editing it in place;
+# formatting or refactoring the code leaves the identifier (and so the fingerprint) unchanged.
+FORMULA_IDS: dict[str, str] = {
+    "motor": "synthetic-motor/1",
+    "compressor": "synthetic-compressor/1",
+}
+
 OUTPUT_CHANNELS: dict[str, tuple[str, ...]] = {
     "motor": ("speed", "vibration"),
     "compressor": ("pressure", "temperature"),
@@ -71,6 +79,10 @@ class TwinModel:
         self.twin_type = twin_type
         self.params = dict(params or DEFAULT_PARAMS[twin_type])
         self.version = version
+
+    @property
+    def formula_id(self) -> str:
+        return FORMULA_IDS[self.twin_type]
 
     def predict(self, measured_inputs: dict[str, float | None]) -> dict[str, float | None]:
         if any(v is None for v in measured_inputs.values()):

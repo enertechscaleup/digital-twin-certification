@@ -1,0 +1,26 @@
+{
+  "_note": "Permanent twin identities, assigned once at a twin's first registration (python -m engine register-twins) and never changed or reused. An identity is random: it names WHO the twin is, never WHAT it contains. What a twin contains is its version fingerprint, sealed in each run's evidence ledger.",
+  "twins": [
+    {
+      "identity": "twn_7qs95apgsg76zictyyed",
+      "composition": "product",
+      "vendor": "synthetic-vendor-a",
+      "design_twin_id": "motor-design",
+      "registered": "2026-10-03"
+    },
+    {
+      "identity": "twn_s7rgbfzieqkm75p6cr7f",
+      "composition": "product",
+      "vendor": "synthetic-vendor-b",
+      "design_twin_id": "compressor-design",
+      "registered": "2026-10-03"
+    },
+    {
+      "identity": "sys_hhx8igbu5hehg7pd52y4",
+      "composition": "system",
+      "project_id": "oil-gas-compressor-train",
+      "design_system_twin_id": "compressor-system-design",
+      "registered": "2026-10-03"
+    }
+  ]
+}

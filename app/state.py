@@ -8,6 +8,7 @@ being displayed, so nothing from later in the run leaks into an earlier view.
 from __future__ import annotations
 
 from app.evidence import RunEvidence
+from engine.lineage import REGISTERED, registered_versions
 
 STATUS_ENTRIES = ("assurance_status_changed", "assurance_reason_added")
 
@@ -42,12 +43,16 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
         if t == "assurance_issued":
             tw = twin(p["twin_id"])
             tw.update(assurance_id=p["assurance_id"], status="assured", reasons=[])
+            if "twin_ref" in p:
+                tw["version"] = p["twin_ref"]
             tw["assurance_history"].append({"assurance_id": p["assurance_id"], "issued_at_tick": e["tick"],
                                             "ledger_seq": e["seq"],
                                             "supersedes": p.get("supersedes"), "twin_version": p.get("twin_version")})
         elif t == "composition_assured":
             tw = twin(p["system_twin_id"])
             tw.update(assurance_id=p["composition_assurance_id"], status="assured", reasons=[])
+            if "system_ref" in p:
+                tw.update(version=p["system_ref"], constituent_versions=p["constituent_refs"])
             tw["assurance_history"].append({"assurance_id": p["composition_assurance_id"], "issued_at_tick": e["tick"],
                                             "ledger_seq": e["seq"]})
         elif t in STATUS_ENTRIES:
@@ -64,6 +69,8 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
         elif t.startswith("recalibration_") or t in ("held_out_validation", "assurance_superseded",
                                                      "composition_reassessment"):
             recalibration.append({"seq": e["seq"], "entry_type": t, "tick": e["tick"], "payload": p})
+            if t == "composition_reassessment" and "system_ref" in p:
+                twin(p["system_twin_id"]).update(version=p["system_ref"], constituent_versions=p["constituent_refs"])
 
     row = ev.timeline[tick]
     for tid, level in row["status"].items():
@@ -88,6 +95,8 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
         "open_anomalies": list(open_anomalies.values()),
         "recalibration": recalibration,
         "adjustment": adjustment,
+        "versions": [{**v, "tick": ev.tick_of(v)} for v in registered_versions(entries)],
+        "lineage_recorded": any(e["entry_type"] == REGISTERED for e in ev.core),
         "ledger_entries_so_far": len(entries),
         "ledger_head_so_far": entries[-1]["entry_hash"] if entries else None,
     }

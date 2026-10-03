@@ -16,6 +16,10 @@ bad or out of envelope) neither advance nor reset the consecutive counters.
 
 Status is sticky: Assured -> Flagged -> Nullified, returning to Assured only
 through recalibration and a new assurance version.
+
+With a ``lineage``, every entry also cites the exact twin version it is about, and
+each readings checkpoint resolves the version labels in its readings to registered
+versions (engine/lineage.py).
 """
 
 from __future__ import annotations
@@ -72,8 +76,10 @@ class _Episode:
 
 class FieldMonitor:
     def __init__(self, registry: Registry, protocol: EscalationProtocol, ledger: EvidenceLedger,
-                 product_assurance_ids: dict[str, str], system_assurance_id: str, checkpoint_every: int = 10):
+                 product_assurance_ids: dict[str, str], system_assurance_id: str, checkpoint_every: int = 10,
+                 lineage=None):
         self.registry = registry
+        self.lineage = lineage
         self.protocol = protocol
         self.ledger = ledger
         self.checkpoint_every = checkpoint_every
@@ -86,6 +92,7 @@ class FieldMonitor:
         self._channels: dict[tuple[str, str], _ChannelState] = {}
         self._episodes: dict[tuple[str, str], _Episode] = {}
         self._anomaly_count = 0
+        self._anomaly_twin: dict[str, str] = {}  # anomaly id -> twin id
         self._pending_readings: list[dict] = []
         self._pending_from_tick: int | None = None
         self._last_tick: int | None = None
@@ -137,6 +144,10 @@ class FieldMonitor:
                 st.gap_run = st.critical_run = st.envelope_run = 0
         self.status[twin_id] = Assurance(twin_id, new_assurance_id)
 
+    def cite(self, twin_id: str, key: str = "twin_ref") -> dict:
+        """``{key: version}`` for the version of ``twin_id`` in operation, or nothing without lineage."""
+        return {key: self.lineage.ref(twin_id)} if self.lineage else {}
+
     def reassess_system(self, tick: int, ts: str) -> dict:
         """After a constituent is re-assured: a new composition version is only
         possible if every constituent is assured. Otherwise record what blocks it.
@@ -145,11 +156,15 @@ class FieldMonitor:
         current = self.status[sys.operational_system_twin_id]
         members = [self.status[self.registry.products[t].operational_twin_id] for t in sys.constituents]
         blockers = [{"constituent": m.twin_id, "assurance_id": m.assurance_id, "status": m.level,
-                     "reasons": [r for r in m.reasons if r["level"] == m.level]}
+                     "reasons": [r for r in m.reasons if r["level"] == m.level], **self.cite(m.twin_id, "constituent_ref")}
                     for m in members if m.level != "assured"]
         payload = {"system_twin_id": sys.operational_system_twin_id, "current_assurance_id": current.assurance_id,
                    "system_status": current.level, "tick": tick,
-                   "constituent_assurance_ids": [m.assurance_id for m in members]}
+                   "constituent_assurance_ids": [m.assurance_id for m in members],
+                   **self.cite(sys.operational_system_twin_id, "system_ref")}
+        if self.lineage:
+            payload["constituent_refs"] = self.lineage.constituent_refs(
+                {t: self.status[p.operational_twin_id].assurance_id for t, p in self.registry.products.items()})
         if blockers:
             return self.ledger.append("composition_reassessment", ts, {
                 **payload, "result": "not_reassured", "blocked_by": blockers})
@@ -164,6 +179,7 @@ class FieldMonitor:
         """Record a human response to an anomaly -- who, when, what followed."""
         return self.ledger.append("anomaly_acknowledged", timestamp, {
             "anomaly_id": anomaly_id, "acknowledged_by": acknowledged_by, "action": action,
+            **self.cite(self._anomaly_twin[anomaly_id]),
         })
 
     # -- product twins ---------------------------------------------------
@@ -259,13 +275,14 @@ class FieldMonitor:
                 self._anomaly_count += 1
                 ep = _Episode(f"anm-{self._anomaly_count:04d}", kind)
                 self._episodes[key] = ep
+                self._anomaly_twin[ep.anomaly_id] = tid
                 r = rows.get(c.channel_id) or {}
                 self.ledger.append("anomaly_opened", ts, {
                     "anomaly_id": ep.anomaly_id, "twin_id": tid, "channel_id": c.channel_id,
                     "type": kind.split(":")[0], "subtype": kind.split(":")[1] if ":" in kind else None,
                     "severity": res["severity"], "tick": tick,
                     "physical_value": r.get("physical_value"), "predicted_value": r.get("predicted_value"),
-                    "gap_pct": res.get("gap_pct"),
+                    "gap_pct": res.get("gap_pct"), **self.cite(tid),
                 })
             ep.readings += 1
             if SEVERITY_ORDER.index(res["severity"]) > SEVERITY_ORDER.index(ep.max_severity):
@@ -278,7 +295,7 @@ class FieldMonitor:
         self.ledger.append("anomaly_closed", ts, {
             "anomaly_id": ep.anomaly_id, "twin_id": key[0], "channel_id": key[1], "type": ep.kind.split(":")[0],
             "closed_at_tick": tick, "readings": ep.readings,
-            "max_severity": ep.max_severity, "max_gap_pct": ep.max_gap_pct,
+            "max_severity": ep.max_severity, "max_gap_pct": ep.max_gap_pct, **self.cite(key[0]),
         })
 
     def _escalate_product(self, product: ProductTwin, tick: int, ts: str) -> None:
@@ -313,13 +330,15 @@ class FieldMonitor:
             if member.level == "nullified":
                 reasons.append({"level": "flagged", "cause": "cascade", "constituent": member.twin_id,
                                 "detail": f"constituent {member.twin_id} is nullified",
-                                "root_causes": [r for r in member.reasons if r["level"] == "nullified"]})
+                                "root_causes": [r for r in member.reasons if r["level"] == "nullified"],
+                                **self.cite(member.twin_id, "constituent_ref")})
         for t in sys.output_constituents:
             member = self.status[self.registry.products[t].operational_twin_id]
             if member.level != "assured":
                 reasons.append({"level": member.level, "cause": "own_output", "constituent": member.twin_id,
                                 "detail": f"output constituent {member.twin_id} is {member.level}",
-                                "root_causes": [r for r in member.reasons if r["level"] == member.level]})
+                                "root_causes": [r for r in member.reasons if r["level"] == member.level],
+                                **self.cite(member.twin_id, "constituent_ref")})
         self._apply(sys.operational_system_twin_id, reasons, tick, ts)
 
     # -- shared ----------------------------------------------------------
@@ -334,7 +353,8 @@ class FieldMonitor:
         new_level = a.level
         for r in new:
             new_level = _worse(new_level, r["level"])
-        payload = {"twin_id": twin_id, "assurance_id": a.assurance_id, "tick": tick, "new_reasons": new}
+        payload = {"twin_id": twin_id, "assurance_id": a.assurance_id, "tick": tick, "new_reasons": new,
+                   **self.cite(twin_id)}
         if new_level != a.level:
             self.ledger.append("assurance_status_changed", ts, {**payload, "from": a.level, "to": new_level})
             if a.level == "assured":
@@ -347,6 +367,7 @@ class FieldMonitor:
         self.ledger.append("readings_checkpoint", self._last_timestamp, {
             "from_tick": self._pending_from_tick, "to_tick": self._last_tick,
             "readings": len(self._pending_readings), "readings_sha256": sha256_hex(self._pending_readings),
+            **({"version_refs": self.lineage.version_refs(self._pending_readings)} if self.lineage else {}),
         })
         self._pending_readings = []
         self._pending_from_tick = None

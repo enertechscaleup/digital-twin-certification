@@ -8,7 +8,10 @@ checks, before anything is served:
 3. the core ledger's hash chain is intact and ends at the pinned head;
 4. the supplementary (AI) ledger's chain is intact, bound to this core ledger,
    and every AI artifact is anchored to a matching core entry;
-5. the readings match the checkpoint hashes sealed in the core ledger.
+5. the readings match the checkpoint hashes sealed in the core ledger;
+6. twin lineage: every version's fingerprint matches its sealed inputs and every
+   entry cites a registered version (engine/lineage.py). Evidence recorded before
+   lineage existed carries no versions to check and is labelled pre-fingerprint.
 
 The source is Cloud Storage in production and the local ``data/`` folder in
 development; both go through the same checks.
@@ -25,6 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 from engine.ledger import verify_chain
+from engine.lineage import verify_lineage
 from explain import supplementary
 from explain.facts import EvidenceIntegrityError, check_evidence
 
@@ -76,7 +80,8 @@ def store_from_env() -> EvidenceStore:
 
 
 def load_runs_config() -> dict:
-    return json.loads(RUNS_CONFIG.read_text(encoding="utf-8"))
+    """``RUNS_CONFIG`` (a path) replaces the served run list, for tests and local development."""
+    return json.loads(Path(os.environ.get("RUNS_CONFIG", RUNS_CONFIG)).read_text(encoding="utf-8"))
 
 
 def _jsonl(raw: bytes) -> list[dict]:
@@ -107,8 +112,8 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
     started = time.monotonic()
     checks: list[dict] = []
 
-    def check(name: str, ok: bool, detail: str = "") -> None:
-        checks.append({"check": name, "passed": ok, "detail": detail})
+    def check(name: str, ok: bool, detail: str = "", **extra) -> None:
+        checks.append({"check": name, "passed": ok, "detail": detail, **extra})
         if not ok:
             raise EvidenceIntegrityError(f"{run}: {name} failed. {detail}")
 
@@ -136,6 +141,13 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
               f"{len(readings)} readings")
     except EvidenceIntegrityError as exc:
         check("readings match the checkpoints sealed in the core ledger", False, str(exc))
+    lineage = verify_lineage(core, readings)
+    if lineage.recorded:
+        check("every twin version fingerprinted, and every entry cites a registered version", lineage.valid,
+              lineage.reason or f"{lineage.versions} versions, {lineage.citations} citations")
+    else:
+        check("twin lineage", lineage.valid, lineage.reason or
+              "Not applicable: pre-fingerprint evidence, recorded before twin lineage", applicable=False)
 
     evidence = RunEvidence(run, title, manifest, core, sup, readings, timeline, store.describe(run, pinned_head))
     evidence.start = datetime.fromisoformat(core[0]["timestamp"].replace("Z", "+00:00"))
