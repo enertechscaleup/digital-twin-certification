@@ -107,6 +107,9 @@ export default function FindConnect({ p, update, head, addManual, registry, regi
                   ))}
                 </div>
                 <div className="small muted">{r.registry_id} · {r.modes.length > 1 ? 'modes' : 'mode'}: {r.modes.map((m) => m.replace('_', '-')).join(', ')}{r.used_by ? ` · used by ${r.used_by.length} project${r.used_by.length > 1 ? 's' : ''}` : ''}</div>
+                <div className="small muted">{r.identity
+                  ? <>Identity <code>{r.identity}</code> · v{r.version} · fingerprint <code title={r.fingerprint}>{r.fingerprint.slice(0, 10)}…</code></>
+                  : 'Preview listing · no registered identity or fingerprint'}</div>
               </div>
             </article>
           )

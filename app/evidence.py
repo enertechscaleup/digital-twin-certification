@@ -147,7 +147,7 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
               lineage.reason or f"{lineage.versions} versions, {lineage.citations} citations")
     else:
         check("twin lineage", lineage.valid, lineage.reason or
-              "Not applicable: pre-fingerprint evidence, recorded before twin lineage", applicable=False)
+              "pre-fingerprint evidence, recorded before twin lineage", applicable=False)
 
     evidence = RunEvidence(run, title, manifest, core, sup, readings, timeline, store.describe(run, pinned_head))
     evidence.start = datetime.fromisoformat(core[0]["timestamp"].replace("Z", "+00:00"))

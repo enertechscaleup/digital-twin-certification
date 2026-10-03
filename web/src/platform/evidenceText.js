@@ -10,6 +10,12 @@ export const CAUSES = {
 
 export const short = (h, n = 10) => (h ? `${h.slice(0, n)}…` : '')
 
+/** "v1.1.0 · 3fa2c1d09e…": a twin version citation (identity, version, fingerprint). */
+export const versionTag = (ref, n = 10) => (ref ? `v${ref.version} · ${short(ref.fingerprint, n)}` : '')
+
+/** The version citation an entry is about, if the run records lineage. */
+export const citedVersion = (p) => p?.twin_ref || p?.system_ref || null
+
 /** Display name for any twin id the evidence mentions: operational, design or system. */
 export function namer(project) {
   const names = {}
@@ -32,12 +38,20 @@ export const anomalyKind = (p) => (p.type === 'data_quality' ? 'dq' : p.type ===
 /** Which twins an entry concerns, for the solo (entry twins only) view. */
 export function entryTwins(e) {
   const p = e.payload || {}
-  return [p.twin_id, p.system_twin_id].filter(Boolean)
+  return [p.twin_id, p.system_twin_id, p.operational_twin_id, p.operational_system_twin_id].filter(Boolean)
 }
 
 export function summarize(e, who) {
   const p = e.payload
   switch (e.entry_type) {
+    case 'twin_version_registered': {
+      const id = p.operational_twin_id || p.operational_system_twin_id
+      const from = p.parent_fingerprint ? `derived from ${short(p.parent_fingerprint, 8)}` : 'first version'
+      const how = p.composition === 'system'
+        ? `composed of ${p.constituents.map((c) => `${c.twin_type} v${c.version}`).join(' + ')}`
+        : `by ${p.registered_by.replace(/^twin owner /, 'owner ').replace(/[()]/g, '')}`
+      return `${who(id)} version ${p.twin.version} registered, ${from}, ${how}`
+    }
     case 'run_started': return `Run started: scenario "${p.scenario}", seed ${p.seed}. Escalation rules recorded.`
     case 'verification': return `${p.stage === 're-verification' ? 'Re-verification' : 'Verification'} of ${who(p.twin_id)} (twin ${p.twin_version}): ${p.passed ? 'PASS' : 'FAIL'}, ${p.test_points} test points`
     case 'bench_validation': return `Bench validation of ${who(p.twin_id)}: ${p.passed ? 'PASS' : 'FAIL'}, ${p.readings} bench readings`

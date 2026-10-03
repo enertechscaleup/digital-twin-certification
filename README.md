@@ -96,6 +96,14 @@ The ledger proves the record was not altered after the fact, not that the
 sensor data was truthful. `engine/protocol.py` holds the escalation rules;
 they are written into the ledger at verification time.
 
+**Twin identity and lineage** (`engine/lineage.py`, design note in
+`docs/twin-lineage.md`): every twin has a permanent random identity
+(`registry/identities.json`, assigned by `python -m engine register-twins`).
+Each version is sealed as its own ledger entry with a content fingerprint and a
+parent pointer, and every entry cites the exact (identity, version,
+fingerprint) it is about. Runs recorded before lineage are served as
+pre-fingerprint evidence.
+
 | Path | What it is |
 |---|---|
 | `engine/ledger.py` | Hash-chained ledger and chain verification |
@@ -103,6 +111,7 @@ they are written into the ledger at verification time.
 | `projects/`, `engine/registry.py` | Project files (twins, composition) and the loader; the registry is built from a project |
 | `engine/verification.py`, `engine/validation.py` | Design-time checks |
 | `engine/monitor.py` | Field classification, escalation, cascade, anomalies |
+| `engine/lineage.py` | Twin identities, version fingerprints, lineage checks |
 | `engine/run.py` | End-to-end orchestration |
 
 ## Phase 2b: Gemini explanations (supplementary)

@@ -5,11 +5,11 @@
 // ?reveal=N (connect the rest of the system at tick N) and ?tick_ms=.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowUpRight, Link2, Pause, Play, RotateCcw, ShieldAlert, ShieldCheck, SkipBack, SkipForward } from 'lucide-react'
+import { ArrowUpRight, Fingerprint, Link2, Pause, Play, RotateCcw, ShieldAlert, ShieldCheck, SkipBack, SkipForward } from 'lucide-react'
 import { ConfigDrawer, Graph, StatusPill, TraceChart } from './components.jsx'
 import { Header } from './OperationView.jsx'
-import { Adjustment, Anomalies, Assistant, Explanations, Integrity, Ledger, Recalibration } from './EvidencePanels.jsx'
-import { CAUSES, entryTwins, namer } from './evidenceText.js'
+import { Adjustment, Anomalies, Assistant, Explanations, Integrity, Ledger, Lineage, Recalibration } from './EvidencePanels.jsx'
+import { CAUSES, entryTwins, namer, short } from './evidenceText.js'
 import { getJson, unitLabel } from './api.js'
 import { TWIN_MODES, topology } from './model/projects.js'
 import { digitsFor, fmt } from './format.js'
@@ -105,6 +105,7 @@ export default function EvidenceView({ project }) {
   const entryNames = entry.map((t) => t.name).join(' & ')
   const restNames = rest.map((t) => t.name.toLowerCase()).join(' & ')
   const v = meta.verification
+  const checksRun = v.checks.filter((c) => c.applicable !== false).length
 
   return (
     <>
@@ -118,8 +119,10 @@ export default function EvidenceView({ project }) {
               </select>
             </label>
             {v.valid
-              ? <span className="chip"><ShieldCheck size={14} /> Evidence verified · {v.checks.length}/{v.checks.length}</span>
+              ? <span className="chip"><ShieldCheck size={14} /> Evidence verified · {checksRun}/{checksRun}</span>
               : <span className="chip" style={{ color: 'var(--nullified)' }}><ShieldAlert size={14} /> Not verified</span>}
+            <span className="chip" title={meta.lineage.recorded ? 'Every twin version is fingerprinted and cited' : 'Recorded before twin lineage: no content fingerprints'}>
+              <Fingerprint size={14} /> {meta.lineage.recorded ? 'Twin lineage recorded' : 'Pre-fingerprint evidence'}</span>
           </>,
           `${meta.title} · scenario ${meta.scenario} · seed ${meta.seed} · synthetic data`,
         )}
@@ -203,6 +206,8 @@ export default function EvidenceView({ project }) {
               <div className="panel-head"><h2 className="label">Composition</h2><span className="small muted">{showSystem ? 'Select a twin' : 'Solo view'}</span></div>
               <div className="panel-pad"><Graph project={showSystem ? project : soloProject} levels={levels} onPick={setSelected} selected={current.key} compact /></div>
             </div>
+            <Lineage meta={meta} state={state} ledger={view.ledger} who={who}
+              inScope={(id) => (id === systemId ? showSystem && rest.length > 0 : showSystem || soloIds.has(id))} />
             <Ledger entries={ledger} head={state.ledger_head_so_far} total={state.ledger_entries_so_far} who={who} />
           </div>
         </div>
@@ -250,7 +255,7 @@ function TwinStatusCard({ twin, s, who, selected, onSelect, system, note }) {
     <Tag className={`twin-card is-${status}${system ? ' is-system' : ''}`} aria-pressed={system ? undefined : selected} onClick={onSelect} style={system ? { cursor: 'default' } : undefined}>
       <div className="twin-card-head">
         <div>
-          <div className="label">{system ? 'System twin' : twin.role === 'controller' ? 'Controller twin' : 'Product twin'}{cur?.twin_version ? ` · twin ${cur.twin_version}` : ''}</div>
+          <div className="label">{system ? 'System twin' : twin.role === 'controller' ? 'Controller twin' : 'Product twin'}{s?.version ? ` · v${s.version.version}` : cur?.twin_version ? ` · twin ${cur.twin_version}` : ''}</div>
           <div className="h4" style={{ fontSize: 14, marginTop: 3 }}>{twin.name}</div>
         </div>
         <StatusPill level={status} />
@@ -259,7 +264,7 @@ function TwinStatusCard({ twin, s, who, selected, onSelect, system, note }) {
         {last ? <>{CAUSES[last.cause] || last.cause}{last.channel_id ? ` · ${last.channel_id}` : ''}{last.constituent ? ` · ${who(last.constituent)}` : ''} (tick {last.since_tick})</>
           : 'No open reasons under this assurance.'}
       </div>
-      <div className="small muted"><code>{s?.assurance_id || '—'}</code>{note ? ` · ${note}` : open.length > 1 ? ` · ${open.length} open reasons` : ''}</div>
+      <div className="small muted"><code>{s?.assurance_id || '—'}</code>{s?.version && <> · <code title={`Identity ${s.version.identity}, fingerprint ${s.version.fingerprint}`}>{short(s.version.fingerprint, 8)}</code></>}{note ? ` · ${note}` : open.length > 1 ? ` · ${open.length} open reasons` : ''}</div>
     </Tag>
   )
 }
@@ -270,12 +275,12 @@ function Reasons({ s, who }) {
   const cur = hist[hist.length - 1]
   return (
     <div className="reasons-box">
-      <div className="small muted">Assurance <code>{s.assurance_id}</code>{cur?.twin_version && <> · twin {cur.twin_version}</>}{cur?.supersedes && <> · supersedes <code>{cur.supersedes}</code></>}</div>
+      <div className="small muted">Assurance <code>{s.assurance_id}</code>{s.version ? <> · version <code>v{s.version.version} · {short(s.version.fingerprint, 10)}</code></> : cur?.twin_version && <> · twin {cur.twin_version}</>}{cur?.supersedes && <> · supersedes <code>{cur.supersedes}</code></>}</div>
       <ul>
         {s.reasons.map((r, i) => (
           <li key={i} className={`reason-${r.level}${r.resolved ? ' resolved' : ''}`}>
             <b>{CAUSES[r.cause] || r.cause}{r.channel_id ? ` · ${r.channel_id}` : ''}</b>
-            <span>{r.constituent ? `${who(r.constituent)}: ` : ''}{r.detail} · since tick {r.since_tick} · ledger #{r.ledger_seq}</span>
+            <span>{r.constituent ? `${who(r.constituent)}${r.constituent_ref ? ` v${r.constituent_ref.version} (${short(r.constituent_ref.fingerprint, 8)})` : ''}: ` : ''}{r.detail} · since tick {r.since_tick} · ledger #{r.ledger_seq}</span>
             {r.root_causes?.length > 0 && <span className="muted">Traced to: {r.root_causes.map((c) => `${CAUSES[c.cause] || c.cause}${c.channel_id ? ` on ${c.channel_id}` : ''}`).join('; ')}</span>}
             {r.resolved && <span className="ok">Resolved at tick {r.resolved.at_tick}: {r.resolved.note}</span>}
           </li>

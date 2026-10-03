@@ -372,6 +372,13 @@ table.grid td.num { text-align: right; }
 .checklist li { display: flex; gap: 10px; align-items: start; font-size: 12px; }
 .checklist .ok { color: var(--assured); }
 .checklist .bad { color: var(--nullified); }
+.checklist .na { color: var(--ink-mid); }
+.ledger-row code.cites { color: var(--ink-mid); }
+.lineage { list-style: none; margin: 0; padding: 0 0 0 12px; border-left: 2px solid var(--rule-strong); display: grid; gap: 8px; }
+.lineage li { display: grid; gap: 2px; font-size: 12px; }
+.lineage-state { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mid); }
+.lineage-state.ok { color: var(--assured); }
+.lineage-state.bad { color: var(--nullified); }
 .callout { padding: 16px 18px; border-left: 3px solid var(--orange); background: rgba(230, 107, 60, 0.06); font-size: 12px; line-height: 1.7; }
 .threshold-bar { position: relative; height: 10px; border-radius: 2px; background: linear-gradient(90deg, var(--assured-bg) 0 33.3%, var(--flagged-bg) 33.3% 66.6%, var(--nullified-bg) 66.6%); }
 

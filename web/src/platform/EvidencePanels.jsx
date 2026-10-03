@@ -3,9 +3,9 @@
 // project and the evidence instead of oil & gas constants.
 
 import { useState } from 'react'
-import { Check, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Check, Fingerprint, Minus, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { TraceChart } from './components.jsx'
-import { CAUSES, anomalyKind, anomalyLabel, short, summarize } from './evidenceText.js'
+import { CAUSES, anomalyKind, anomalyLabel, citedVersion, short, summarize, versionTag } from './evidenceText.js'
 import { unitLabel } from './api.js'
 import { fmt } from './format.js'
 
@@ -41,8 +41,10 @@ export function Recalibration({ state, who, showSystem }) {
         {sealed && <li><Mark ok /><span>Both parts sealed before release: <code>{short(sealed.released_part.readings_sha256)}</code> and <code>{short(sealed.held_out_part.readings_sha256)}</code></span></li>}
         {rec.recalibration_data_released && <li><Mark ok /><span>Earlier part released to the twin owner. Held-out part released: <b>no</b></span></li>}
         {sub && <li><Mark ok /><span>Owner submitted twin <b>{sub.twin_version}</b>: {sub.method}</span></li>}
+        {rec.recalibration_submitted?.candidate_ref && <li><Mark ok /><span>Registered on submission as a new version of the same twin: <code>{versionTag(rec.recalibration_submitted.candidate_ref)}</code>, derived from <code>{versionTag(rec.recalibration_submitted.previous_ref)}</code></span></li>}
         {hv && <li><Mark ok={hv.passed} /><span>Held-out validation <b>{hv.passed ? 'PASSED' : 'FAILED'}</b> on {hv.ticks_evaluated} held-out ticks the owner never saw</span></li>}
         {sup && <li><Mark ok /><span><code>{sup.old_assurance_id}</code> superseded by <code>{sup.new_assurance_id}</code>, effective tick {sup.effective_from_tick}. Prior evidence unchanged.</span></li>}
+        {re?.system_ref && showSystem && <li><Mark ok /><span>System twin's content changed with it: now version <b>{re.system_ref.version}</b> (<code>{short(re.system_ref.fingerprint)}</code>), composed of {re.constituent_refs.map((c) => `${who(c.twin_id)} v${c.version}`).join(' + ')}. Fresh composition record.</span></li>}
         {re && showSystem && <li><Mark ok={re.result === 'reassured'} /><span>System twin {re.result === 'reassured' ? 're-assured' : <>not re-assured: blocked by <b>{re.blocked_by.map((b) => `${who(b.constituent)} (${b.reasons.map((r) => CAUSES[r.cause] + (r.channel_id ? ` · ${r.channel_id}` : '')).join('; ')})`).join(', ')}</b></>}</span></li>}
       </ul>
       {hv && (
@@ -165,6 +167,11 @@ export function Ledger({ entries, head, total, who }) {
           <li key={e.seq} className="ledger-row" onClick={() => setOpen(open === e.seq ? null : e.seq)} style={{ cursor: 'pointer' }}>
             <span className="seq">#{e.seq}</span>
             <span>{summarize(e, who)}<br /><code>tick {e.tick} · {short(e.entry_hash, 12)} ← {short(e.prev_hash, 8)}</code>
+              {e.entry_type === 'twin_version_registered'
+                ? <><br /><code className="cites">fingerprint {short(e.payload.twin.fingerprint, 16)}</code></>
+                : e.payload.version_refs
+                  ? <><br /><code className="cites">covers {e.payload.version_refs.map((r) => `${who(r.twin_id)} v${r.version}`).join(', ')}</code></>
+                  : citedVersion(e.payload) && <><br /><code className="cites">cites {versionTag(citedVersion(e.payload), 12)}</code></>}
               {open === e.seq && <pre className="payload">{JSON.stringify(e.payload, null, 2)}</pre>}</span>
           </li>
         ))}
@@ -235,6 +242,8 @@ export function Integrity({ meta, run }) {
   const [result, setResult] = useState(null)
   const [busy, setBusy] = useState(false)
   const v = result || meta.verification
+  const applicable = (v.checks || []).filter((c) => c.applicable !== false).length
+  const notApplicable = (v.checks || []).length - applicable
   async function reverify() {
     setBusy(true)
     try {
@@ -248,12 +257,70 @@ export function Integrity({ meta, run }) {
       <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><ShieldCheck size={13} color="var(--orange)" /> Evidence integrity</h2></div>
       <div className="panel-pad" style={{ display: 'grid', gap: 10 }}>
         {v.valid
-          ? <div className="verified"><Check size={15} /> Verified · {v.checks.length} of {v.checks.length} checks passed{result ? ` just now in ${v.seconds}s` : ''}</div>
+          ? <div className="verified"><Check size={15} /> Verified · {applicable} of {applicable} checks passed{notApplicable ? ` · ${notApplicable} not applicable` : ''}{result ? ` just now in ${v.seconds}s` : ''}</div>
           : <div className="callout callout-warn"><b>Not verified.</b> {v.error}</div>}
         <span className="small muted">Source <code>{v.source || meta.evidence_source}</code></span>
-        {v.checks && <ul className="checklist">{v.checks.map((c) => <li key={c.check}><Check size={14} className="ok" /> {c.check}</li>)}</ul>}
+        {v.checks && <ul className="checklist">{v.checks.map((c) => c.applicable === false
+          ? <li key={c.check}><Minus size={14} className="na" /> <span>{c.check} · not applicable: <span className="muted">{c.detail}</span></span></li>
+          : <li key={c.check}><Check size={14} className="ok" /> {c.check}</li>)}</ul>}
         <div><button className="button button-ghost button-small" onClick={reverify} disabled={busy}><RefreshCw size={13} /> {busy ? 'Checking…' : 'Re-verify now from the evidence store'}</button></div>
       </div>
+    </div>
+  )
+}
+
+/* ---------- Twin lineage ---------- */
+
+// Each twin's permanent identity and its versions as of the tick on screen. A version is in
+// operation, superseded (once in operation), rejected (submitted, never in operation), or
+// under test (submitted, no outcome yet at this tick).
+export function Lineage({ meta, state, ledger, who, inScope }) {
+  if (!meta.lineage.recorded) {
+    return (
+      <div className="panel">
+        <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Fingerprint size={13} color="var(--orange)" /> Twin lineage</h2><span className="small muted">pre-fingerprint</span></div>
+        <p className="hint panel-pad" style={{ margin: 0 }}>This run was recorded before twin lineage existed. Its twins are named by role, with a version label declared by their owner, and carry no content fingerprints. Its ledger, files and readings are verified as before; runs recorded since carry a fingerprinted lineage for every twin.</p>
+      </div>
+    )
+  }
+  const accepted = new Set(ledger.flatMap((e) => (e.entry_type === 'assurance_issued' && e.payload.twin_ref ? [e.payload.twin_ref.fingerprint]
+    : e.entry_type === 'composition_assured' || e.entry_type === 'composition_reassessment' ? [e.payload.system_ref?.fingerprint] : [])))
+  const rejected = new Set(ledger.filter((e) => e.entry_type === 'recalibration_rejected' && e.payload.candidate_ref).map((e) => e.payload.candidate_ref.fingerprint))
+  const groups = []
+  for (const v of state.versions) {
+    const id = v.operational_twin_id || v.operational_system_twin_id
+    if (!inScope(id)) continue
+    let g = groups.find((x) => x.identity === v.identity)
+    if (!g) groups.push(g = { identity: v.identity, id, versions: [] })
+    g.versions.push(v)
+  }
+  const standing = (g, v) => (state.twins[g.id]?.version?.fingerprint === v.fingerprint ? ['in operation', 'ok']
+    : accepted.has(v.fingerprint) ? ['superseded', ''] : rejected.has(v.fingerprint) ? ['rejected', 'bad'] : ['under test', ''])
+  return (
+    <div className="panel">
+      <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Fingerprint size={13} color="var(--orange)" /> Twin lineage</h2><span className="small muted">{state.versions.length} versions sealed</span></div>
+      <p className="hint" style={{ padding: '10px 18px 0' }}>One permanent identity per twin. Each version is fingerprinted over its formula, parameters, channels and assured ranges, and sealed before any evidence about it. Every ledger entry cites the exact version it concerns.</p>
+      <ul className="rule-list panel-pad" style={{ paddingBlock: 4 }}>
+        {groups.map((g) => (
+          <li key={g.identity} style={{ display: 'grid', gap: 6 }}>
+            <span><b style={{ fontSize: 13 }}>{who(g.id)}</b> <code className="muted" title="Permanent identity">{g.identity}</code></span>
+            <ol className="lineage">
+              {g.versions.map((v) => {
+                const [label, tone] = standing(g, v)
+                return (
+                  <li key={v.fingerprint}>
+                    <span><b>v{v.version}</b> <code title={v.fingerprint}>{short(v.fingerprint, 12)}</code> <span className={`lineage-state ${tone}`}>{label}</span></span>
+                    <span className="small muted">
+                      tick {v.tick} · {v.parent_fingerprint ? <>derived from <code>{short(v.parent_fingerprint, 8)}</code></> : 'first version'}
+                      {v.constituents ? <> · {v.constituents.map((c) => `${c.twin_type} v${c.version}`).join(' + ')}</> : v.formula_id ? <> · formula {v.formula_id}</> : null}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
