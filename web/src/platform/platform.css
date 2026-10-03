@@ -379,6 +379,11 @@ table.grid td.num { text-align: right; }
 .lineage-state { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--ink-mid); }
 .lineage-state.ok { color: var(--assured); }
 .lineage-state.bad { color: var(--nullified); }
+.lineage .claim { font-style: italic; }
+.joint-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 14px; }
+.joint { display: grid; gap: 10px; align-content: start; padding: 14px 16px; border: 1px solid var(--rule); border-left: 3px solid var(--assured); border-radius: 3px; background: var(--paper); }
+.joint.is-fail { border-left-color: var(--flagged); }
+.joint-head { display: flex; justify-content: space-between; gap: 10px; align-items: start; }
 .callout { padding: 16px 18px; border-left: 3px solid var(--orange); background: rgba(230, 107, 60, 0.06); font-size: 12px; line-height: 1.7; }
 .threshold-bar { position: relative; height: 10px; border-radius: 2px; background: linear-gradient(90deg, var(--assured-bg) 0 33.3%, var(--flagged-bg) 33.3% 66.6%, var(--nullified-bg) 66.6%); }
 

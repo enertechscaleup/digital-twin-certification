@@ -3,7 +3,7 @@
     .venv/bin/python -m tools.lineage_dev_pack      # writes data/lineage-dev/
 
 Regenerates the full assurance cycle with the current engine (so it records twin
-lineage) into data/lineage-dev/, with placeholder AI explanations instead of Gemini
+lineage and joint composition tests, against simulated vendor endpoints) into data/lineage-dev/, with placeholder AI explanations instead of Gemini
 calls, and a runs.json that pins it. It is never uploaded and is not evidence: the
 served runs and their pins (app/config/runs.json) are untouched. Serve it with the
 "platform-lineage-dev" launch configuration.
@@ -22,8 +22,8 @@ from engine.run import run_assurance, write_jsonl
 from explain import supplementary
 from explain.gemini import generate_artifacts
 from telemetry.faults import Scenario
-from vendor.advise import recommend
-from vendor.recalibrate import owner_for_platform
+from engine.boundary import ExchangeLog
+from vendor.endpoint import simulated_vendors
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "data" / "lineage-dev"
@@ -44,11 +44,12 @@ class PlaceholderAI:
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "demo_full_cycle.json").read_text()))
-    r = run_assurance(s, seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
-                      ledger_path=OUT / f"{RUN}.ledger.jsonl", recalibrator=owner_for_platform, advisor=recommend,
+    r = run_assurance(s, simulated_vendors(), seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                      ledger_path=OUT / f"{RUN}.ledger.jsonl",
                       code_commit=code_commit())
     write_jsonl(r.readings, OUT / f"{RUN}.readings.jsonl")
     write_jsonl(r.timeline, OUT / f"{RUN}.timeline.jsonl")
+    ExchangeLog.write_records(r.exchange, OUT / f"{RUN}.exchange.jsonl")
     sup = supplementary.start(OUT / f"{RUN}.supplementary.jsonl", r.ledger.entries)
     generate_artifacts(r.ledger.entries, r.readings, r.timeline, load_registry(), PlaceholderAI(),
                        on_artifact=lambda a: supplementary.record(sup, a))

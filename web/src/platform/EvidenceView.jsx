@@ -8,7 +8,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Fingerprint, Link2, Pause, Play, RotateCcw, ShieldAlert, ShieldCheck, SkipBack, SkipForward } from 'lucide-react'
 import { ConfigDrawer, Graph, StatusPill, TraceChart } from './components.jsx'
 import { Header } from './OperationView.jsx'
-import { Adjustment, Anomalies, Assistant, Explanations, Integrity, Ledger, Lineage, Recalibration } from './EvidencePanels.jsx'
+import { Adjustment, Anomalies, Assistant, CompositionTests, Explanations, Integrity, Ledger, Lineage, Recalibration } from './EvidencePanels.jsx'
 import { CAUSES, entryTwins, namer, short } from './evidenceText.js'
 import { getJson, unitLabel } from './api.js'
 import { TWIN_MODES, topology } from './model/projects.js'
@@ -212,6 +212,12 @@ export default function EvidenceView({ project }) {
           </div>
         </div>
       </div>
+
+      {showSystem && rest.length > 0 && state.composition_tests.length > 0 && (
+        <div className="content-width" style={{ paddingBottom: 32 }}>
+          <CompositionTests state={state} who={who} />
+        </div>
+      )}
 
       {(hasRecal || hasAdj) && (
         <section className="night" style={{ padding: '40px 0 48px' }} aria-labelledby="scen-h">

@@ -1,103 +1,113 @@
-"""Tests for twin identity and version lineage (engine/lineage.py)."""
+"""Tests for twin identity and version lineage (engine/lineage.py) behind the vendor boundary."""
 
 import copy
+import hashlib
 import json
 import unittest
-from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-from engine.ledger import sha256_hex, verify_chain
-from engine.lineage import (REGISTERED, LineageError, assign_identities, legacy_projection, load_identities,
-                            product_fingerprint_inputs, verify_lineage)
+from engine.boundary import RemoteTwin
+from engine.lineage import (PROBES_SEALED, REGISTERED, LineageError, assign_identities, load_identities,
+                            verify_lineage)
 from engine.registry import load_registry
 from engine.run import run_assurance
 from telemetry.faults import Scenario
 from telemetry.models import TwinModel
 from tests.test_recalibration import stale_owner
-from vendor.advise import recommend
-from vendor.recalibrate import owner_for_platform, recalibrate
+from vendor.endpoint import simulated_vendors
+from vendor.recalibrate import recalibrate
 
 ROOT = Path(__file__).resolve().parent.parent
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
-SCENARIOS = ("demo_full_cycle", "demo_wear_to_nullified", "faults_showcase")
 MOTOR, SYSTEM = "motor-op-001", "compressor-system-op-001"
+# The readings and per-tick timeline files of the three locked runs (their manifests' SHA-256).
+LOCKED = {
+    "demo_full_cycle": ("0b3371016a9577b7cf0d5d1d304623b5f24810581d691fe7ae3465ab53cab1d9",
+                        "e953b34058e2af4ae2ba71519e5d864327994385d2f1e3bf53a656e19c5e3417"),
+    "demo_wear_to_nullified": ("5cc1a1c271d1b86822100551479cb780290dbdecc75107fc8f26e13c80a3b1c0",
+                               "da22a644f1930e70e6af371a1a943d8a1f2ebd79c8e43713f5bd3072c21217c9"),
+    "faults_showcase": ("f2d97670d5732eee443fc97a7839117a5c28b346a6e71eed9fa936297e37dd8a",
+                        "eb683aac86eb4995ef4c9f6bb0d9f3436d205cf2bd129a9c9a1a31d90a21f406"),
+}
 
 
 def scenario(name: str) -> Scenario:
     return Scenario.from_dict(json.loads((ROOT / "scenarios" / f"{name}.json").read_text()))
 
 
-def run(name: str, recalibrator=owner_for_platform, **kw):
-    return run_assurance(scenario(name), seed=42, start_time=START, recalibrator=recalibrator, advisor=recommend,
-                         code_commit="commit-under-test", **kw)
+def run(name: str, **vendor_kw):
+    return run_assurance(scenario(name), simulated_vendors(**vendor_kw), seed=42, start_time=START,
+                         code_commit="commit-under-test")
 
 
 def registrations(result) -> list[dict]:
     return [e["payload"] for e in result.ledger.entries if e["entry_type"] == REGISTERED]
 
 
-def fingerprint(product, model) -> str:
-    return sha256_hex(product_fingerprint_inputs(product, model))
+def jsonl_sha256(rows: list[dict]) -> str:
+    return hashlib.sha256("".join(json.dumps(r) + "\n" for r in rows).encode()).hexdigest()
 
 
-class TestLockedRunsAreUntouched(unittest.TestCase):
-    def test_lineage_is_purely_additive(self):
-        """Taking lineage back out of a regenerated run reproduces the pinned, locked evidence
-        hash for hash: no existing entry, value or order changed; lineage only added."""
-        pins = {r["run"]: r["core_ledger_head_hash"]
-                for r in json.loads((ROOT / "app" / "config" / "runs.json").read_text())["runs"]}
-        for name in SCENARIOS:
-            legacy = legacy_projection(run(name).ledger.entries)
-            self.assertTrue(verify_chain(legacy).valid)
-            self.assertEqual(legacy[-1]["entry_hash"], pins[f"assurance-{name}-seed42"], name)
+class TestLockedRunsDecisionsUnchanged(unittest.TestCase):
+    def test_same_data_and_same_decisions_as_the_locked_runs(self):
+        """Behind the vendor boundary, with lineage and joint tests, each scenario still produces
+        exactly the locked runs' readings and per-tick statuses: the record grew, the decisions
+        did not change."""
+        for name, (readings, timeline) in LOCKED.items():
+            r = run(name)
+            self.assertEqual(jsonl_sha256(r.readings), readings, name)
+            self.assertEqual(jsonl_sha256(r.timeline), timeline, name)
 
     def test_pre_fingerprint_evidence_is_labelled_not_failed(self):
-        legacy = legacy_projection(run("demo_wear_to_nullified").ledger.entries)
+        legacy = [e for e in run("demo_wear_to_nullified").ledger.entries if e["entry_type"] == "run_started"]
         check = verify_lineage(legacy, [])
         self.assertEqual((check.recorded, check.valid), (False, True))
 
 
-class TestFingerprint(unittest.TestCase):
-    def setUp(self):
-        self.motor = load_registry().products["motor"]
-        self.model = TwinModel("motor")
-        self.fp = fingerprint(self.motor, self.model)
+class TestMeasuredFingerprint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.base = registrations(run("faults_showcase"))[0]
 
-    def test_changes_with_anything_that_determines_behaviour(self):
-        params = TwinModel("motor", {**self.model.params, "speed_per_volt": 3.7})
-        out = self.motor.outputs[0]
-        ranged = replace(self.motor, channels=tuple(replace(c, env_max=c.env_max + 1) if c == out else c
-                                                    for c in self.motor.channels))
-        tolerant = replace(self.motor, channels=tuple(replace(c, tolerance_pct=6) if c == out else c
-                                                      for c in self.motor.channels))
+    def test_changes_when_behaviour_changes(self):
+        changed = TwinModel("motor", {**TwinModel("motor").params, "vib_base": 0.51})
+        other = registrations(run("faults_showcase", twins={"motor": changed}))[0]
+        self.assertNotEqual(other["twin"]["fingerprint"], self.base["twin"]["fingerprint"])
 
-        class OtherFormula(TwinModel):
-            formula_id = "synthetic-motor/2"
+    def test_does_not_change_with_the_label_or_the_platform_commit(self):
+        relabelled = registrations(run("faults_showcase", twins={"motor": TwinModel("motor", version="9.9.9")}))[0]
+        self.assertEqual(relabelled["twin"]["fingerprint"], self.base["twin"]["fingerprint"])
+        other = run_assurance(scenario("faults_showcase"), simulated_vendors(), seed=42, start_time=START,
+                              code_commit="another-commit")
+        self.assertEqual(registrations(other)[0]["twin"]["fingerprint"], self.base["twin"]["fingerprint"])
 
-        for changed in (fingerprint(self.motor, params), fingerprint(ranged, self.model),
-                        fingerprint(tolerant, self.model), fingerprint(self.motor, OtherFormula("motor"))):
-            self.assertNotEqual(changed, self.fp)
+    def test_measured_is_the_evidence_and_declared_only_a_claim(self):
+        p = self.base
+        self.assertEqual(p["twin"]["fingerprint"], p["measured"]["fingerprint"])
+        self.assertTrue(p["measured"]["authority"].startswith("evidence"))
+        self.assertTrue(p["declared"]["authority"].startswith("claim"))
+        self.assertNotEqual(p["declared"]["fingerprint"], p["measured"]["fingerprint"])
+        self.assertNotIn("params", json.dumps(p))
 
-    def test_ignores_what_does_not(self):
-        renamed = replace(self.motor, channels=tuple(replace(c, name="x") for c in self.motor.channels),
-                          vendor="someone else", asset_id="another-asset")
-        relabelled = TwinModel("motor", version="9.9.9")
-        self.assertEqual(fingerprint(renamed, self.model), self.fp)
-        self.assertEqual(fingerprint(self.motor, relabelled), self.fp)
+    def test_probe_set_is_sealed_before_the_twin_is_queried(self):
+        entries = run("faults_showcase").ledger.entries
+        sealed = next(i for i, e in enumerate(entries) if e["entry_type"] == PROBES_SEALED)
+        registered = next(i for i, e in enumerate(entries) if e["entry_type"] == REGISTERED)
+        self.assertLess(sealed, registered)
+        self.assertEqual(entries[sealed]["payload"]["probe_set_sha256"],
+                         entries[registered]["payload"]["measured"]["inputs"]["probe_set_sha256"])
 
-    def test_code_commit_is_sealed_beside_the_fingerprint_not_inside_it(self):
-        a = registrations(run("faults_showcase"))[0]
-        b = registrations(run_assurance(scenario("faults_showcase"), seed=42, start_time=START,
-                                        code_commit="another-commit"))[0]
-        self.assertEqual(a["twin"]["fingerprint"], b["twin"]["fingerprint"])
-        self.assertEqual((a["code_commit"], b["code_commit"]), ("commit-under-test", "another-commit"))
+    def test_the_platform_never_records_twin_parameters(self):
+        r = run("demo_full_cycle")
+        text = json.dumps(r.ledger.entries)
+        self.assertNotIn("speed_per_volt", text)
+        self.assertNotIn("params", json.dumps([e["payload"].get("submission", {}) for e in r.ledger.entries]))
 
 
 class TestIdentity(unittest.TestCase):
     def test_every_twin_in_the_project_has_a_permanent_identity(self):
-        reg = load_registry()
-        self.assertEqual(assign_identities(reg, "oil-gas-compressor-train", load_identities()), [])
+        self.assertEqual(assign_identities(load_registry(), "oil-gas-compressor-train", load_identities()), [])
 
     def test_new_twins_get_random_identities_and_existing_ones_never_change(self):
         reg = load_registry()
@@ -112,13 +122,18 @@ class TestIdentity(unittest.TestCase):
 
     def test_a_run_refuses_twins_without_an_identity(self):
         with self.assertRaises(LineageError):
-            run_assurance(scenario("faults_showcase"), seed=42, start_time=START, identities=[])
+            run_assurance(scenario("faults_showcase"), simulated_vendors(), seed=42, start_time=START, identities=[])
 
     def test_design_and_operational_stages_share_one_identity(self):
-        r = run("faults_showcase")
-        issued = [e["payload"] for e in r.ledger.of_type("assurance_issued") if e["payload"]["twin_id"].startswith("motor")]
+        issued = [e["payload"] for e in run("faults_showcase").ledger.of_type("assurance_issued")
+                  if e["payload"]["twin_id"].startswith("motor")]
         self.assertEqual({p["twin_id"] for p in issued}, {"motor-design", "motor-op-001"})
         self.assertEqual(len({p["twin_ref"]["identity"] for p in issued}), 1)
+
+
+def _refs(obj):
+    from engine.lineage import _refs as refs
+    return list(refs(obj))
 
 
 class TestFullCycleLineage(unittest.TestCase):
@@ -131,13 +146,14 @@ class TestFullCycleLineage(unittest.TestCase):
         cls.system = [p for p in regs if p["composition"] == "system"]
 
     def test_the_ledger_verifies(self):
-        check = verify_lineage(self.entries, self.r.readings)
+        check = verify_lineage(self.entries, self.r.readings, self.r.exchange)
         self.assertTrue(check.valid, check.reason)
         self.assertEqual(check.versions, 5)
+        self.assertEqual(check.exchanges, len(self.r.exchange))
 
     def test_every_entry_cites_a_version(self):
         uncited = [e["entry_type"] for e in self.entries
-                   if e["entry_type"] not in ("run_started", REGISTERED) and "identity" not in json.dumps(e["payload"])]
+                   if e["entry_type"] not in ("run_started", REGISTERED, PROBES_SEALED) and not _refs(e["payload"])]
         self.assertEqual(uncited, [])
 
     def test_versions_are_sealed_before_any_evidence_about_them(self):
@@ -167,23 +183,16 @@ class TestFullCycleLineage(unittest.TestCase):
         for e in self.entries:
             p = e["payload"]
             if p.get("twin_id") == MOTOR and e["entry_type"] in ("assurance_status_changed", "anomaly_opened"):
-                expected = v1 if p["tick"] < at else v2
-                self.assertEqual(p["twin_ref"]["fingerprint"], expected, e["seq"])
+                self.assertEqual(p["twin_ref"]["fingerprint"], v1 if p["tick"] < at else v2, e["seq"])
 
     def test_system_gets_a_new_version_and_a_fresh_composition_record(self):
         s1, s2 = self.system
         self.assertEqual(s2["parent_fingerprint"], s1["twin"]["fingerprint"])
-        motor_in = {c["twin_type"]: c["version"] for c in s2["constituents"]}
-        self.assertEqual(motor_in, {"motor": "1.1.0", "compressor": "1.0.0"})
+        versions = {c["twin_type"]: c["version"] for c in s2["constituents"]}
+        self.assertEqual(versions, {"motor": "1.1.0", "compressor": "1.0.0"})
         record = next(e["payload"] for e in self.entries if e["entry_type"] == "composition_reassessment")
         self.assertEqual(record["system_ref"], s2["twin"])
-        self.assertEqual({c["twin_type"]: c["version"] for c in record["constituent_refs"]}, motor_in)
-
-    def test_composition_records_cite_every_constituent_by_exact_version(self):
-        for e in self.r.ledger.of_type("composition_assured"):
-            refs = e["payload"]["constituent_refs"]
-            self.assertEqual([c["twin_type"] for c in refs], ["motor", "compressor"])
-            self.assertTrue(all(len(c["fingerprint"]) == 64 and c["identity"] and c["version"] for c in refs))
+        self.assertEqual({c["twin_type"]: c["version"] for c in record["constituent_refs"]}, versions)
 
     def test_cascade_reasons_name_the_constituents_version(self):
         status = self.r.ledger.of_type("assurance_status_changed") + self.r.ledger.of_type("assurance_reason_added")
@@ -193,33 +202,29 @@ class TestFullCycleLineage(unittest.TestCase):
         self.assertTrue(all(r["constituent_ref"]["version"] == "1.0.0" for r in cascades))
 
 
-def _refs(obj):
-    from engine.lineage import _refs as refs
-    return list(refs(obj))
-
-
 class TestRejectedVersions(unittest.TestCase):
     def test_a_rejected_version_stays_in_the_lineage_and_out_of_operation(self):
         r = run("demo_full_cycle", recalibrator=stale_owner)
-        check = verify_lineage(r.ledger.entries, r.readings)
+        check = verify_lineage(r.ledger.entries, r.readings, r.exchange)
         self.assertTrue(check.valid, check.reason)
         stale = next(p for p in registrations(r) if p["twin"]["version"] == "1.1.0-stale")
         rejected = r.ledger.of_type("recalibration_rejected")[0]["payload"]
         self.assertEqual(rejected["candidate_ref"], stale["twin"])
         self.assertEqual(rejected["twin_ref"]["version"], "1.0.0")
         self.assertEqual(len([p for p in registrations(r) if p["composition"] == "system"]), 1)
+        self.assertEqual(r.ledger.of_type("composition_test")[-1]["payload"]["trigger"], "initial build")
         self.assertEqual(r.ledger.entries[-1]["payload"]["final_refs"][MOTOR]["version"], "1.0.0")
 
-    def test_reusing_a_version_label_for_different_content_is_rejected(self):
+    def test_a_label_that_now_behaves_differently_is_rejected(self):
         def same_label(twin_type, current, released, envelopes):
             return recalibrate(twin_type, current, released, envelopes, current.version).to_dict()
 
         r = run("demo_full_cycle", recalibrator=same_label)
         rejected = r.ledger.of_type("recalibration_rejected")[0]["payload"]
-        self.assertIn("already registered with different content", rejected["reason"])
+        self.assertIn("now behaves differently", rejected["reason"])
         self.assertEqual(len([p for p in registrations(r) if p.get("twin_type") == "motor"]), 1)
         self.assertNotIn("recalibration_submitted", [e["entry_type"] for e in r.ledger.entries])
-        self.assertTrue(verify_lineage(r.ledger.entries, r.readings).valid)
+        self.assertTrue(verify_lineage(r.ledger.entries, r.readings, r.exchange).valid)
 
 
 class TestTamperedLineageIsCaught(unittest.TestCase):
@@ -227,48 +232,78 @@ class TestTamperedLineageIsCaught(unittest.TestCase):
     def setUpClass(cls):
         cls.r = run("demo_full_cycle")
 
-    def check(self, edit, readings=None) -> str:
-        entries = copy.deepcopy(self.r.ledger.entries)
-        rows = copy.deepcopy(self.r.readings if readings is None else readings)
-        edit(entries, rows)
-        result = verify_lineage(entries, rows)
+    def check(self, edit) -> str:
+        entries, readings, exchange = (copy.deepcopy(x) for x in (self.r.ledger.entries, self.r.readings, self.r.exchange))
+        edit(entries, readings, exchange)
+        result = verify_lineage(entries, readings, exchange)
         self.assertFalse(result.valid)
         return result.reason
 
-    def first(self, entries, kind, **match):
-        return next(e for e in entries if e["entry_type"] == kind
-                    and all(e["payload"].get(k) == v for k, v in match.items()))
+    def first(self, entries, kind):
+        return next(e for e in entries if e["entry_type"] == kind)
 
-    def test_fingerprint_inputs_changed_after_sealing(self):
-        def edit(entries, _):
-            self.first(entries, REGISTERED)["payload"]["fingerprint_inputs"]["params"]["speed_per_volt"] = 4.0
+    def test_a_probe_response_changed_after_sealing(self):
+        def edit(_, __, exchange):
+            exchange[0]["outputs"]["speed"] += 1
+        self.assertIn("does not match its seal", self.check(edit))
+
+    def test_measured_inputs_changed_after_sealing(self):
+        def edit(entries, _, __):
+            self.first(entries, REGISTERED)["payload"]["measured"]["inputs"]["interface"][0]["tolerance_pct"] = 9
         self.assertIn("does not match the inputs", self.check(edit))
 
+    def test_an_exchange_not_sealed_in_the_ledger(self):
+        def edit(_, __, exchange):
+            exchange.append({**exchange[0], "batch": "x9999"})
+        self.assertIn("not sealed", self.check(edit))
+
     def test_evidence_cites_an_unregistered_version(self):
-        def edit(entries, _):
+        def edit(entries, _, __):
             self.first(entries, "anomaly_opened")["payload"]["twin_ref"]["fingerprint"] = "0" * 64
         self.assertIn("not registered", self.check(edit))
 
-    def test_tested_parameters_differ_from_the_fingerprinted_version(self):
-        def edit(entries, _):
-            self.first(entries, "verification")["payload"]["twin_params"]["speed_per_volt"] = 4.0
-        self.assertIn("tested parameters differ", self.check(edit))
-
     def test_an_entry_without_a_citation(self):
-        def edit(entries, _):
+        def edit(entries, _, __):
             del self.first(entries, "assurance_status_changed")["payload"]["twin_ref"]
         self.assertIn("does not cite", self.check(edit))
 
     def test_a_reading_from_an_unregistered_version(self):
-        def edit(_, rows):
-            rows[100]["twin_version"] = "1.0.1"
+        def edit(_, readings, __):
+            readings[100]["twin_version"] = "1.0.1"
         self.assertIn("does not resolve to a registered version", self.check(edit))
 
     def test_a_parent_from_another_twin(self):
-        def edit(entries, _):
+        def edit(entries, _, __):
             regs = [e for e in entries if e["entry_type"] == REGISTERED]
-            regs[3]["payload"]["parent_fingerprint"] = regs[1]["payload"]["twin"]["fingerprint"]  # motor 1.1.0 <- compressor
+            regs[3]["payload"]["parent_fingerprint"] = regs[1]["payload"]["twin"]["fingerprint"]
         self.assertIn("parent is not an earlier version of the same twin", self.check(edit))
+
+
+class TestTheTestedTwinIsTheFingerprintedTwin(unittest.TestCase):
+    def test_a_twin_that_answers_verification_differently_from_its_probes_is_caught(self):
+        """A twin that recognises the probe set and answers it 'correctly', but behaves
+        differently once tested, is caught: verification answers must equal probe answers."""
+        class TwoFaced:
+            def __init__(self):
+                self.calls = 0
+
+            def __call__(self, message):
+                req = json.loads(message)
+                if req["op"] == "predict":
+                    self.calls += 1
+                    out = TwinModel("motor").predict(req["inputs"])
+                    if self.calls > 41:  # after the probe set, answer differently
+                        out = {k: v * 1.001 for k, v in out.items()}
+                    return json.dumps({"outputs": out})
+                return json.dumps({"version": "1.0.0", "declared_fingerprint": "x", "declared_method": "m"})
+
+        from engine.boundary import InProcessConnection
+        vendors = simulated_vendors()
+        vendors["motor"] = InProcessConnection(TwoFaced())
+        r = run_assurance(scenario("faults_showcase"), vendors, seed=42, start_time=START)
+        check = verify_lineage(r.ledger.entries, r.readings, r.exchange)
+        self.assertFalse(check.valid)
+        self.assertIn("answered differently from the twin fingerprinted", check.reason)
 
 
 if __name__ == "__main__":

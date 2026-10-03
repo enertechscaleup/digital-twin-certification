@@ -156,8 +156,18 @@ class Toolbox:
                     if self._visible(v.get("operational_twin_id") or v.get("operational_system_twin_id"))
                     and (twin_id is None or twin_id in (v.get("operational_twin_id"), v.get("operational_system_twin_id")))]
         return {"recorded": True, "versions": versions,
-                "note": "Each version: a permanent random identity, the owner's version label, a fingerprint of everything "
-                        "that determines the twin's behaviour, and its parent version. Every ledger entry cites one."}
+                "note": "Each version: a permanent random identity, the owner's version label, a fingerprint the platform "
+                        "measured by probing the twin with sealed inputs (the evidence), a fingerprint the owner declares "
+                        "(an unverified claim), and its parent version. Every ledger entry cites the measured one."}
+
+    def get_composition_tests(self) -> dict:
+        tests = state_at(self.ev, self.tick)["composition_tests"]
+        if self.motor_only:
+            return {"note": "Composition tests concern the whole system; connect the system to see them."}
+        return {"tests": [_trim(t["payload"]) for t in tests],
+                "note": "Joint runs of the twins through their owners' endpoints (simulated vendor endpoints in this "
+                        "prototype). interface: each upstream prediction inside the downstream twin's assured range; "
+                        "interaction: joint prediction within tolerance against the combined test bench."}
 
     def call(self, name: str, args: dict) -> dict:
         fn = getattr(self, name, None) if name in TOOL_NAMES else None
@@ -205,6 +215,8 @@ TOOL_SCHEMAS = [
      "parameters": {"type": "object", "properties": {"twin_id": TWIN_ID}}},
     {"name": "get_twin_lineage", "description": "Each twin's permanent identity and its versions up to the current tick: version label, content fingerprint, parent version, and for the system twin the exact constituent versions.",
      "parameters": {"type": "object", "properties": {"twin_id": TWIN_ID}}},
+    {"name": "get_composition_tests", "description": "Joint composition tests up to the current tick: the twins run together through their owners' endpoints, with the interface check and the interaction check results.",
+     "parameters": {"type": "object", "properties": {}}},
     {"name": "get_evidence_integrity", "description": "Result of the integrity checks run on this evidence (fingerprints, hash chains, AI anchors, sealed readings).",
      "parameters": {"type": "object", "properties": {}}},
 ]

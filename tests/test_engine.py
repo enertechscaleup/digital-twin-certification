@@ -19,6 +19,7 @@ from engine.verification import verify
 from telemetry.faults import DataQualityFault, EnvelopeViolation, Scenario
 from telemetry.generator import TelemetryGenerator
 from telemetry.models import TwinModel
+from vendor.endpoint import simulated_vendors
 
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
 SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios"
@@ -29,8 +30,8 @@ def scenario(name):
     return Scenario.from_dict(json.loads((SCENARIOS / f"{name}.json").read_text()))
 
 
-def run(s, **kw):
-    return run_assurance(s, seed=42, start_time=START, **kw)
+def run(s, twins=None, **kw):
+    return run_assurance(s, simulated_vendors(twins=twins), seed=42, start_time=START, **kw)
 
 
 def transitions(result):

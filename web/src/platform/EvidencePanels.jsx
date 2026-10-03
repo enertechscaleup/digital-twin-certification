@@ -3,7 +3,7 @@
 // project and the evidence instead of oil & gas constants.
 
 import { useState } from 'react'
-import { Check, Fingerprint, Minus, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { Check, Fingerprint, Link2, Minus, RefreshCw, ShieldCheck, Sparkles, X } from 'lucide-react'
 import { TraceChart } from './components.jsx'
 import { CAUSES, anomalyKind, anomalyLabel, citedVersion, short, summarize, versionTag } from './evidenceText.js'
 import { unitLabel } from './api.js'
@@ -45,7 +45,11 @@ export function Recalibration({ state, who, showSystem }) {
         {hv && <li><Mark ok={hv.passed} /><span>Held-out validation <b>{hv.passed ? 'PASSED' : 'FAILED'}</b> on {hv.ticks_evaluated} held-out ticks the owner never saw</span></li>}
         {sup && <li><Mark ok /><span><code>{sup.old_assurance_id}</code> superseded by <code>{sup.new_assurance_id}</code>, effective tick {sup.effective_from_tick}. Prior evidence unchanged.</span></li>}
         {re?.system_ref && showSystem && <li><Mark ok /><span>System twin's content changed with it: now version <b>{re.system_ref.version}</b> (<code>{short(re.system_ref.fingerprint)}</code>), composed of {re.constituent_refs.map((c) => `${who(c.twin_id)} v${c.version}`).join(' + ')}. Fresh composition record.</span></li>}
-        {re && showSystem && <li><Mark ok={re.result === 'reassured'} /><span>System twin {re.result === 'reassured' ? 're-assured' : <>not re-assured: blocked by <b>{re.blocked_by.map((b) => `${who(b.constituent)} (${b.reasons.map((r) => CAUSES[r.cause] + (r.channel_id ? ` · ${r.channel_id}` : '')).join('; ')})`).join(', ')}</b></>}</span></li>}
+        {re?.composition_test && showSystem && <li><Mark ok={re.composition_test.passed} /><span>Twins run together again ({re.composition_test.test_id}): interface check <b>{re.composition_test.interface_passed ? 'passed' : 'failed'}</b>, interaction check <b>{re.composition_test.interaction_passed ? 'passed' : 'failed'}</b></span></li>}
+        {re && showSystem && <li><Mark ok={re.result === 'reassured'} /><span>System twin {re.result === 'reassured' ? 're-assured' : <>not re-assured: blocked by <b>{[
+          ...re.blocked_by.map((b) => `${who(b.constituent)} (${b.reasons.map((r) => CAUSES[r.cause] + (r.channel_id ? ` · ${r.channel_id}` : '')).join('; ')})`),
+          ...(re.composition_test && !re.composition_test.passed ? [`its joint test ${re.composition_test.test_id}`] : []),
+        ].join(', ')}</b></>}</span></li>}
       </ul>
       {hv && (
         <div className="table-wrap night-table">
@@ -269,6 +273,45 @@ export function Integrity({ meta, run }) {
   )
 }
 
+/* ---------- Joint composition tests ---------- */
+
+// Each joint run of the twins, as of the tick on screen: the interface check (does every
+// upstream prediction land in the downstream twin's assured range?) and the interaction
+// check (does the joint prediction hold against the combined test bench?), kept apart.
+export function CompositionTests({ state, who }) {
+  const tests = state.composition_tests.filter((t) => t.entry_type === 'composition_test')
+  if (!tests.length) return null
+  return (
+    <div className="panel">
+      <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Link2 size={13} color="var(--orange)" /> Composition · joint runs</h2>
+        <span className="small muted">{tests.length} joint {tests.length === 1 ? 'run' : 'runs'}</span></div>
+      <p className="hint" style={{ padding: '10px 18px 0' }}>Each twin's own evidence cannot show the twins still predict well together. So the platform runs them jointly through their owners' endpoints (simulated vendor endpoints in this prototype): each downstream twin is fed the upstream twin's prediction, never a measurement. Only what crosses the boundary is recorded.</p>
+      <div className="joint-grid panel-pad">
+        {tests.map(({ seq, payload: t }) => (
+          <article key={seq} className={`joint ${t.passed ? 'is-pass' : 'is-fail'}`}>
+            <div className="joint-head">
+              <div><div className="label">{t.test_id} · {t.trigger}</div>
+                <div className="small muted">system v{t.system_ref.version} = {t.constituent_refs.map((c) => `${who(c.twin_id)} v${c.version}`).join(' + ')} · {t.points} test points · {t.exchange.calls} exchanges sealed</div></div>
+              <span className={`pill ${t.passed ? 'pill-assured' : 'pill-flagged'}`}>{t.passed ? 'passed' : 'failed'}</span>
+            </div>
+            <ul className="step-list">
+              {t.interface.connections.map((c) => (
+                <li key={c.from + c.to}><Mark ok={c.passed} /><span><b>Interface</b> {c.from} → {c.to}: predicted {fmt(c.predicted_range[0], 0)}–{fmt(c.predicted_range[1], 0)} {unitLabel(c.unit)} against assured {fmt(c.assured_range[0], 0)}–{fmt(c.assured_range[1], 0)} {unitLabel(c.unit)}
+                  {c.passed ? ' · inside at every point' : <> · <b>outside at {c.points_outside} of {t.points} points</b></>}</span></li>
+              ))}
+              {Object.entries(t.interaction.per_channel).map(([k, c]) => (
+                <li key={k}><Mark ok={c.passed} /><span><b>Interaction</b> {k}: joint prediction within {c.max_gap_pct == null ? '—' : `${fmt(c.max_gap_pct, 1)}%`} of the combined test bench (tolerance {c.tolerance_pct}%)
+                  {t.interaction.not_evaluated_points ? ` · checked at the ${t.interaction.evaluated_points} points where every interface holds` : ''}</span></li>
+              ))}
+            </ul>
+            <div className="small muted">Test fingerprint <code>{short(t.test_fingerprint, 12)}</code> · ledger #{seq}</div>
+          </article>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ---------- Twin lineage ---------- */
 
 // Each twin's permanent identity and its versions as of the tick on screen. A version is in
@@ -299,7 +342,7 @@ export function Lineage({ meta, state, ledger, who, inScope }) {
   return (
     <div className="panel">
       <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Fingerprint size={13} color="var(--orange)" /> Twin lineage</h2><span className="small muted">{state.versions.length} versions sealed</span></div>
-      <p className="hint" style={{ padding: '10px 18px 0' }}>One permanent identity per twin. Each version is fingerprinted over its formula, parameters, channels and assured ranges, and sealed before any evidence about it. Every ledger entry cites the exact version it concerns.</p>
+      <p className="hint" style={{ padding: '10px 18px 0' }}>One permanent identity per twin. Each twin runs in its owner's environment, so the platform fingerprints each version by what it can observe: its answers to sealed probe inputs, with its declared interface. That measured fingerprint is the evidence, sealed before anything else about the version, and every ledger entry cites it. The owner's own fingerprint is shown as an unverified claim.</p>
       <ul className="rule-list panel-pad" style={{ paddingBlock: 4 }}>
         {groups.map((g) => (
           <li key={g.identity} style={{ display: 'grid', gap: 6 }}>
@@ -312,8 +355,9 @@ export function Lineage({ meta, state, ledger, who, inScope }) {
                     <span><b>v{v.version}</b> <code title={v.fingerprint}>{short(v.fingerprint, 12)}</code> <span className={`lineage-state ${tone}`}>{label}</span></span>
                     <span className="small muted">
                       tick {v.tick} · {v.parent_fingerprint ? <>derived from <code>{short(v.parent_fingerprint, 8)}</code></> : 'first version'}
-                      {v.constituents ? <> · {v.constituents.map((c) => `${c.twin_type} v${c.version}`).join(' + ')}</> : v.formula_id ? <> · formula {v.formula_id}</> : null}
+                      {v.constituents ? <> · {v.constituents.map((c) => `${c.twin_type} v${c.version}`).join(' + ')}</> : v.measured?.probes ? <> · measured from {v.measured.probes} probe answers</> : null}
                     </span>
+                    {v.declared && <span className="small muted claim">Owner's claim, unverified: <code>{short(v.declared.fingerprint, 10)}</code></span>}
                   </li>
                 )
               })}

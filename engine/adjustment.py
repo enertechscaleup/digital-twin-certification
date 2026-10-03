@@ -4,8 +4,9 @@ Evidence unit (design doc, Twin operating modes): pre-state snapshot with an
 input-range check, the twin's recommendation and predicted end-state, a named
 approval, a single execution, then a post-state snapshot with a Sim2Real check.
 
-The recommendation comes from the twin's owner (``advisor``, passed in -- the
-engine never imports it). The platform only checks and records:
+The recommendation comes from the twin's owner, through its endpoint's ``advise``
+request (engine/boundary.py): the platform never sees how it was made. The
+platform only checks and records:
 
 * the twin's assured mode must be semi-autonomous, and it must be assured now;
 * every input of the twin must be clean and inside its assured range (pre-state);
@@ -18,25 +19,19 @@ the objective (did the connected channel return to its assured range?).
 
 from __future__ import annotations
 
-from typing import Callable
-
 from engine.ledger import EvidenceLedger
 from engine.monitor import FieldMonitor
 from engine.readings import gap_pct, is_valid_number
 from engine.registry import Registry
 from telemetry.faults import AdjustmentRequest
 
-Advisor = Callable[..., dict]
-
-
 class AdjustmentEpisode:
     def __init__(self, request: AdjustmentRequest, registry: Registry, ledger: EvidenceLedger,
-                 monitor: FieldMonitor, advisor: Advisor, episode_id: str = "adj-0001"):
+                 monitor: FieldMonitor, episode_id: str = "adj-0001"):
         self.req = request
         self.registry = registry
         self.ledger = ledger
         self.monitor = monitor
-        self.advisor = advisor
         self.episode_id = episode_id
         self.product = registry.products[request.twin_type]
         self.objective_product = registry.products[request.objective["twin_type"]]
@@ -111,8 +106,9 @@ class AdjustmentEpisode:
         control = next(c for c in p.inputs if c.channel_id == self.req.control_channel)
         connection = next(c for c in self.registry.system.connections
                           if c["to_twin"] == self.req.objective["twin_type"] and c["to_channel"] == self.objective_channel.channel_id)
-        advice = self.advisor(p.twin_type, twin_model, inputs, control.channel_id, (control.env_min, control.env_max),
-                              connection["from_channel"], self.objective_channel.env_min)
+        advice = twin_model.advise(pre_inputs=inputs, control_channel=control.channel_id,
+                                   control_range=[control.env_min, control.env_max],
+                                   target_output=connection["from_channel"], target_min=self.objective_channel.env_min)
         setpoint_ok = control.env_min <= advice["to"] <= control.env_max
         predicted_objective = advice["predicted_end_state"][connection["from_channel"]]
         self.recommendation = advice

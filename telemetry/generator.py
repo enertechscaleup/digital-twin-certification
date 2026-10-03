@@ -248,6 +248,37 @@ class TelemetryGenerator:
                     )
             yield batch
 
+    # -- combined test bench ---------------------------------------------
+
+    def system_bench(self, points: list[dict], scenario: Scenario | None = None, tick: int | None = None,
+                     repeats: int = 3) -> list[dict]:
+        """The physical machines run together at each point ({"<twin>/<input>": value} for
+        the system's external inputs): each machine's true output drives the machine it is
+        connected to, and every output is read by a noisy sensor. With a scenario and a
+        tick, the machines are in the condition (wear) they are in at that tick."""
+        rng = self._rng(f"system-bench:{tick}")
+        physical = {t: PhysicalModel(self.configs[t], rng) for t in self.order}
+        hours_per_tick = (scenario.operational_hours_per_tick if scenario else None) or self.tick_seconds / 3600
+        wear: dict[str, dict[str, float]] = {t: defaultdict(float) for t in self.order}
+        if scenario and tick is not None:
+            for w in scenario.wear:
+                for ch, pct in w.wear_pct(tick, tick * hours_per_tick, hours_per_tick).items():
+                    wear[w.twin_type][ch] += pct
+        samples = []
+        for i, pt in enumerate(points):
+            for _ in range(repeats):
+                true_out: dict[str, dict[str, float]] = {}
+                sensed: dict[str, dict[str, float]] = {}
+                for t in self.order:
+                    linked = self.project.linked_inputs(t)
+                    true_in = {c["channel_id"]: (true_out[linked[c["channel_id"]]["from_twin"]][linked[c["channel_id"]]["from_channel"]]
+                                                 if c["channel_id"] in linked else pt[f"{t}/{c['channel_id']}"])
+                               for c in self.configs[t]["channels"] if c["direction"] == "input"}
+                    true_out[t] = physical[t].true_outputs(true_in, wear[t])
+                    sensed[t] = {ch: _round(physical[t].sense(v)) for ch, v in true_out[t].items()}
+                samples.append({"point": i, "outputs": sensed})
+        return samples
+
     def _reading(self, run_id, kind, tick, hours, twin_id, cfg, channel, physical_value, predicted_value,
                  test_point, faults) -> Reading:
         return Reading(

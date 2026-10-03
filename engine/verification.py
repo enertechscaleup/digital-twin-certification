@@ -17,8 +17,8 @@ def _sweep(twin: ProductTwin, levels: int) -> list[dict[str, float]]:
 
 
 def verify(twin: ProductTwin, model, protocol: EscalationProtocol, levels: int = 5) -> dict:
-    """``model`` is the twin under test: anything with ``predict(inputs)``,
-    ``version`` and ``params``. Returns the verification record."""
+    """``model`` is the twin under test: anything with ``predict(inputs)`` and
+    ``version`` (a twin is only ever queried, never opened). Returns the verification record."""
     points = _sweep(twin, levels)
     failures = {"deterministic": [], "complete": [], "finite": [], "within_declared_output_ranges": []}
     for pt in points:
@@ -40,7 +40,6 @@ def verify(twin: ProductTwin, model, protocol: EscalationProtocol, levels: int =
     return {
         "twin_id": twin.design_twin_id,
         "twin_version": model.version,
-        "twin_params": model.params,
         "passed": all(c["passed"] for c in checks),
         "checks": checks,
         "test_points": len(points),

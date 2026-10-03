@@ -148,9 +148,18 @@ class FieldMonitor:
         """``{key: version}`` for the version of ``twin_id`` in operation, or nothing without lineage."""
         return {key: self.lineage.ref(twin_id)} if self.lineage else {}
 
-    def reassess_system(self, tick: int, ts: str) -> dict:
+    def composition_tested(self, test: dict, reasons: list[dict], tick: int, ts: str) -> None:
+        """A joint composition test after a recalibration: each failure is a specific reason
+        on the system twin (interface or interaction), citing the constituent it concerns."""
+        sys_id = self.registry.system.operational_system_twin_id
+        cited = [{**r, "test_seq": test["seq"],
+                  **(self.cite(r["constituent"], "constituent_ref") if r.get("constituent") else {})} for r in reasons]
+        self._apply(sys_id, cited, tick, ts)
+
+    def reassess_system(self, tick: int, ts: str, test: dict | None = None) -> dict:
         """After a constituent is re-assured: a new composition version is only
-        possible if every constituent is assured. Otherwise record what blocks it.
+        possible if every constituent is assured and the twins, run together again,
+        passed their joint test (``test``). Otherwise record what blocks it.
         The system twin's own status is not changed here (status is sticky)."""
         sys = self.registry.system
         current = self.status[sys.operational_system_twin_id]
@@ -165,7 +174,13 @@ class FieldMonitor:
         if self.lineage:
             payload["constituent_refs"] = self.lineage.constituent_refs(
                 {t: self.status[p.operational_twin_id].assurance_id for t, p in self.registry.products.items()})
-        if blockers:
+        joint_failed = test is not None and not test["payload"]["passed"]
+        if test is not None:
+            payload["composition_test"] = {"test_id": test["payload"]["test_id"], "test_seq": test["seq"],
+                                           "passed": test["payload"]["passed"],
+                                           "interface_passed": test["payload"]["interface"]["passed"],
+                                           "interaction_passed": test["payload"]["interaction"]["passed"]}
+        if blockers or joint_failed:
             return self.ledger.append("composition_reassessment", ts, {
                 **payload, "result": "not_reassured", "blocked_by": blockers})
         stem, v = current.assurance_id.rsplit("-v", 1)

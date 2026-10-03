@@ -35,6 +35,8 @@ from explain.facts import EvidenceIntegrityError, check_evidence
 ROOT = Path(__file__).resolve().parent.parent
 RUNS_CONFIG = Path(__file__).parent / "config" / "runs.json"
 FILE_KINDS = ("ledger", "supplementary", "readings", "timeline")
+# Runs recorded with twin lineage also carry the boundary exchange file (engine/boundary.py).
+OPTIONAL_KINDS = ("exchange",)
 
 
 class EvidenceStore:
@@ -99,6 +101,7 @@ class RunEvidence:
     timeline: list[dict]
     source: str
     verification: dict = field(default_factory=dict)
+    exchange: list[dict] = field(default_factory=list)
     start: datetime | None = None
     tick_seconds: int = 2
 
@@ -122,7 +125,8 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
     check("manifest names the pinned core ledger", manifest["core_ledger_head_hash"] == pinned_head,
           f"pinned {pinned_head[:16]}, manifest {manifest['core_ledger_head_hash'][:16]}")
 
-    raw = {k: store.read(run, pinned_head, f"{run}.{k}.jsonl") for k in FILE_KINDS}
+    kinds = FILE_KINDS + tuple(k for k in OPTIONAL_KINDS if f"{run}.{k}.jsonl" in manifest["file_sha256"])
+    raw = {k: store.read(run, pinned_head, f"{run}.{k}.jsonl") for k in kinds}
     for k, content in raw.items():
         name = f"{run}.{k}.jsonl"
         check(f"{k} file matches its manifest fingerprint",
@@ -141,15 +145,18 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
               f"{len(readings)} readings")
     except EvidenceIntegrityError as exc:
         check("readings match the checkpoints sealed in the core ledger", False, str(exc))
-    lineage = verify_lineage(core, readings)
+    exchange = _jsonl(raw["exchange"]) if "exchange" in raw else []
+    lineage = verify_lineage(core, readings, exchange)
     if lineage.recorded:
-        check("every twin version fingerprinted, and every entry cites a registered version", lineage.valid,
-              lineage.reason or f"{lineage.versions} versions, {lineage.citations} citations")
+        check("every twin version measured and fingerprinted, every entry cites a registered version, "
+              "and every boundary exchange is sealed", lineage.valid,
+              lineage.reason or f"{lineage.versions} versions, {lineage.citations} citations, {lineage.exchanges} exchanges")
     else:
         check("twin lineage", lineage.valid, lineage.reason or
               "pre-fingerprint evidence, recorded before twin lineage", applicable=False)
 
     evidence = RunEvidence(run, title, manifest, core, sup, readings, timeline, store.describe(run, pinned_head))
+    evidence.exchange = exchange
     evidence.start = datetime.fromisoformat(core[0]["timestamp"].replace("Z", "+00:00"))
     evidence.verification = {
         "valid": True, "checks": checks, "source": evidence.source,
@@ -161,7 +168,7 @@ def verify_run(store: EvidenceStore, run: str, title: str, pinned_head: str) -> 
 def write_manifest(directory: Path, run: str, scenario: str, code_commit: str | None = None) -> dict:
     """Write <run>.manifest.json describing the four evidence files in ``directory``."""
     files = {f"{run}.{k}.jsonl": hashlib.sha256((directory / f"{run}.{k}.jsonl").read_bytes()).hexdigest()
-             for k in FILE_KINDS}
+             for k in FILE_KINDS + OPTIONAL_KINDS if (directory / f"{run}.{k}.jsonl").exists()}
     core = _jsonl((directory / f"{run}.ledger.jsonl").read_bytes())
     sup = _jsonl((directory / f"{run}.supplementary.jsonl").read_bytes())
     manifest = {

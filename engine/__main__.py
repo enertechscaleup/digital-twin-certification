@@ -1,6 +1,7 @@
 """Command-line entry point.
 
     python -m engine run --scenario scenarios/demo_wear_to_nullified.json
+    python -m engine run --scenario ... --vendor motor=http://localhost:9101 --vendor compressor=http://localhost:9102
     python -m engine verify-ledger data/<run>.ledger.jsonl
     python -m engine register-twins [--project projects/<project>.json]
 """
@@ -13,6 +14,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from engine.boundary import ExchangeLog
 from engine.ledger import load_ledger, verify_chain
 from engine.lineage import IDENTITIES, REGISTERED, register_identities
 from engine.registry import load_registry
@@ -31,18 +33,28 @@ def code_commit() -> str | None:
     return head + ("-dirty" if dirty else "")
 
 
+def vendors(urls: list[str]) -> dict:
+    """A connection to each twin owner's endpoint: simulated in process, or over HTTP for any
+    ``twin=url`` given (python -m vendor.serve). The engine itself never imports the vendor side."""
+    from engine.boundary import HttpConnection
+    from vendor.endpoint import simulated_vendors
+    out = simulated_vendors()
+    for spec in urls or []:
+        twin, url = spec.split("=", 1)
+        out[twin] = HttpConnection(url)
+    return out
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     raw = json.loads(args.scenario.read_text(encoding="utf-8"))
     start = datetime.fromisoformat(args.start_time.replace("Z", "+00:00")) if args.start_time else None
     stem = f"assurance-{raw['name']}-seed{args.seed}"
     ledger_path = args.out / f"{stem}.ledger.jsonl"
-    # The twin owner is a separate party; the engine is handed it, never imports it.
-    from vendor.advise import recommend
-    from vendor.recalibrate import owner_for_platform
-    result = run_assurance(Scenario.from_dict(raw), seed=args.seed, start_time=start, ledger_path=ledger_path,
-                           recalibrator=owner_for_platform, advisor=recommend, code_commit=code_commit())
+    result = run_assurance(Scenario.from_dict(raw), vendors(args.vendor), seed=args.seed, start_time=start,
+                           ledger_path=ledger_path, code_commit=code_commit())
     write_jsonl(result.timeline, args.out / f"{stem}.timeline.jsonl")
     write_jsonl(result.readings, args.out / f"{stem}.readings.jsonl")
+    ExchangeLog.write_records(result.exchange, args.out / f"{stem}.exchange.jsonl")
 
     for e in result.ledger.entries:
         p = e["payload"]
@@ -50,6 +62,11 @@ def cmd_run(args: argparse.Namespace) -> None:
             parent = f"parent {p['parent_fingerprint'][:12]}" if p["parent_fingerprint"] else "first version"
             print(f"[{e['seq']:3d}] version registered {p['twin']['identity']} v{p['twin']['version']:<8} "
                   f"{p['twin']['fingerprint'][:12]}  {parent}")
+        elif e["entry_type"] == "composition_test":
+            i, x = p["interface"], p["interaction"]
+            print(f"[{e['seq']:3d}] joint composition test {p['test_id']} ({p['trigger']}): "
+                  f"interface {'PASS' if i['passed'] else 'FAIL'}, interaction {'PASS' if x['passed'] else 'FAIL'} "
+                  f"on {x['evaluated_points']}/{p['points']} points")
         elif e["entry_type"] == "verification" and p.get("stage") == "re-verification":
             print(f"[{e['seq']:3d}] re-verification  {p['twin_id']:<20} {'PASS' if p['passed'] else 'FAIL'} (twin {p['twin_version']})")
         elif e["entry_type"] in ("verification", "bench_validation"):
@@ -125,6 +142,8 @@ def main() -> None:
     r.add_argument("--seed", type=int, default=42)
     r.add_argument("--start-time", default="2026-10-01T00:00:00Z", help="ISO timestamp for tick 0")
     r.add_argument("--out", type=Path, default=Path("data"))
+    r.add_argument("--vendor", action="append", metavar="TWIN=URL",
+                   help="query this twin's owner over HTTP (python -m vendor.serve) instead of in process")
     r.set_defaults(func=cmd_run)
     v = sub.add_parser("verify-ledger", help="check a ledger file's hash chain")
     v.add_argument("ledger", type=Path)

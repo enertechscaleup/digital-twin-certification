@@ -13,6 +13,7 @@ from telemetry.faults import Scenario
 from telemetry.generator import TelemetryGenerator
 from vendor.advise import recommend
 from vendor.recalibrate import owner_for_platform
+from vendor.endpoint import simulated_vendors
 
 ROOT = Path(__file__).resolve().parent.parent
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -26,7 +27,7 @@ def scenario(**adjust):
 
 
 def run(s, advisor=recommend):
-    return run_assurance(s, seed=42, start_time=START, recalibrator=owner_for_platform, advisor=advisor)
+    return run_assurance(s, simulated_vendors(advisor=advisor), seed=42, start_time=START)
 
 
 def entries(result, prefix="adjustment_"):

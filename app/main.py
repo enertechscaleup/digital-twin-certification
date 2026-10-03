@@ -22,10 +22,8 @@ from app.assistant import AssistantError, GeminiChat, ask as assistant_ask
 from app.assistant_tools import Toolbox
 from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_run
 from app.state import core_upto, explanations_upto, state_at
-from engine.ledger import sha256_hex
-from engine.lineage import REGISTERED, load_identities, product_fingerprint_inputs, product_identity, registered_versions
+from engine.lineage import REGISTERED, load_identities, product_identity, registered_versions
 from engine.registry import load_registry
-from telemetry.models import TwinModel
 from explain.facts import EvidenceIntegrityError
 from projects import ProjectError, find_project, list_projects
 
@@ -135,7 +133,6 @@ def registry() -> dict:
     entries: dict[str, dict] = {}
     identities = load_identities()
     for p in list_projects():
-        products = load_registry(p).products
         for tw in p.twins:
             if not tw.registry_id:
                 continue
@@ -151,10 +148,8 @@ def registry() -> dict:
                               "declared_range": [c["envelope"]["min"], c["envelope"]["max"]],
                               "tolerance_pct": c.get("tolerance_pct")} for c in cfg["channels"]],
                 "used_by": [p.project_id],
-                # The permanent identity, and the version as registered (before any recalibration in a run).
+                # The permanent identity. Versions are fingerprinted when a run probes them (engine/lineage.py).
                 "identity": product_identity(identities, cfg["vendor"], cfg["design_twin_id"]),
-                "version": (model := TwinModel(tw.twin_type)).version,
-                "fingerprint": sha256_hex(product_fingerprint_inputs(products[tw.twin_type], model)),
             }
     return {"entries": list(entries.values())}
 

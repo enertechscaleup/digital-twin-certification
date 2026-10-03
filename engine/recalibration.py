@@ -6,27 +6,28 @@
    out. Degradation is time-dependent, so a temporal split resists overfitting
    in a way a random split cannot.
 3. Seal both parts' SHA-256 in the ledger BEFORE anything is released.
-4. Release only the earlier part to the owner, who returns a recalibrated twin.
-5. Re-verify the recalibrated twin, then validate it on the held-out part.
-6. Pass: issue a new assurance version, effective from the request, that
-   supersedes the old one. Every earlier entry stays exactly as it was.
-   Fail: record the rejection; the old assurance and status stand.
-
-With lineage, the submitted twin is registered as a new version the moment it
-arrives, with the version in operation as its parent; every later entry cites it.
-A passing version goes into operation, the system twin is re-registered for its
-new constituent version, and a fresh composition record follows. A submission
-that reuses a version label for different content is rejected before any test.
-
-The owner (``recalibrator``) is passed in from outside: the engine never
-imports it, so the platform never builds or adjusts a twin itself.
+4. Release only the earlier part to the owner, through its endpoint. The owner
+   recalibrates inside its own environment and publishes a new version; the
+   platform receives the version label, declared ranges and method, and a
+   fingerprint the owner declares -- never the parameters.
+5. Register the new version on arrival: the platform probes it and seals its
+   measured fingerprint, with the version in operation as its parent. A label
+   already registered that now behaves differently is rejected before any test.
+6. Re-verify it, then validate it on the held-out part, both by querying it.
+7. Pass: issue a new assurance version, effective from the request, that
+   supersedes the old one; the new version goes into operation, the system twin
+   is registered as a new version, and the twins are run jointly again
+   (engine/composition.py). A failing joint test is a specific reason on the
+   system twin and blocks its re-assurance. Every earlier entry stays exactly
+   as it was. Fail: record the rejection; the old assurance and status stand.
 """
 
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Callable
 
+from engine.boundary import RemoteTwin
+from engine.composition import CompositionTester, failure_reasons
 from engine.ledger import EvidenceLedger, sha256_hex
 from engine.lineage import LineageError
 from engine.monitor import FieldMonitor
@@ -34,10 +35,6 @@ from engine.protocol import EscalationProtocol
 from engine.readings import gap_pct, is_valid_number
 from engine.registry import ProductTwin
 from engine.verification import verify
-from telemetry.models import TwinModel
-
-# recalibrator(twin_type, current_model, released_readings, input_envelopes) -> submission dict
-Recalibrator = Callable[[str, TwinModel, list[dict], dict[str, tuple[float, float]]], dict]
 
 
 def plan_split(first_flagged_tick: int, at_tick: int, protocol: EscalationProtocol) -> dict | None:
@@ -67,7 +64,7 @@ def with_declared_outputs(product: ProductTwin, ranges: dict[str, dict]) -> Prod
     return replace(product, channels=channels)
 
 
-def held_out_validate(product: ProductTwin, model: TwinModel, held_out: list[dict],
+def held_out_validate(product: ProductTwin, model, held_out: list[dict],
                       protocol: EscalationProtocol) -> dict:
     """Re-simulate the held-out ticks with the recalibrated twin and compare
     against the physical readings. Ticks with bad or out-of-envelope inputs,
@@ -112,10 +109,11 @@ def _next_version(assurance_id: str) -> str:
     return f"{stem}-v{int(v) + 1}"
 
 
-def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: ProductTwin, current: TwinModel,
-                      readings_so_far: list[dict], at_tick: int, timestamp: str,
-                      protocol: EscalationProtocol, recalibrator: Recalibrator) -> TwinModel | None:
-    """Returns the recalibrated twin if a new assurance version was issued."""
+def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: ProductTwin, current: RemoteTwin,
+                      readings_so_far: list[dict], at_tick: int, timestamp: str, protocol: EscalationProtocol,
+                      tester: CompositionTester, twins: dict[str, RemoteTwin]) -> RemoteTwin | None:
+    """``current`` and ``twins``: the versions in operation, as evidence handles. Returns the
+    new version's evidence handle if a new assurance version was issued."""
     tid = product.operational_twin_id
     status = monitor.status[tid]
     lineage = monitor.lineage
@@ -150,42 +148,43 @@ def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: Pr
     })
 
     envelopes = {c.channel_id: (c.env_min, c.env_max) for c in product.inputs}
-    submission = recalibrator(product.twin_type, current, [dict(r) for r in released], envelopes)
-    candidate = TwinModel(product.twin_type, submission["params"], submission["twin_version"])
+    submission = current.recalibrate([dict(r) for r in released], envelopes)
+    candidate = RemoteTwin(current.connection, product.twin_type, submission["twin_version"])
     restated = with_declared_outputs(product, submission["declared_output_ranges"])
-    node = None
-    if lineage:
-        try:
-            node = lineage.register_product(product.twin_type, restated, candidate, timestamp,
-                                            "twin owner (recalibration submission)", at_tick)
-        except LineageError as exc:
-            ledger.append("recalibration_rejected", timestamp, {
-                "twin_id": tid, "assurance_id": status.assurance_id, "status_unchanged": status.level,
-                "reason": str(exc), "submission_sha256": sha256_hex(submission), **cite,
-            })
-            return None
-    new = {"twin_ref": node.ref()} if node else {}
+    try:
+        node = lineage.register_product(product.twin_type, restated, candidate, timestamp,
+                                        "twin owner (recalibration submission)", at_tick)
+    except LineageError as exc:
+        ledger.append("recalibration_rejected", timestamp, {
+            "twin_id": tid, "assurance_id": status.assurance_id, "status_unchanged": status.level,
+            "reason": str(exc), "submission_sha256": sha256_hex(submission), **cite,
+        })
+        return None
+    candidate = lineage.evidence_twin(product.twin_type, candidate)
+    new = {"twin_ref": node.ref()}
     ledger.append("recalibration_submitted", timestamp, {
         "twin_id": tid, "vendor": product.vendor, "submission": submission,
-        "submission_sha256": sha256_hex(submission),
-        "previous_twin_version": current.version, "previous_params": current.params,
-        **({"previous_ref": cite["twin_ref"], "candidate_ref": node.ref()} if node else {}),
+        "submission_sha256": sha256_hex(submission), "previous_twin_version": current.version,
+        "previous_ref": cite["twin_ref"], "candidate_ref": node.ref(),
     })
 
+    with tester.exchange.batch("verification") as seal:
+        record = verify(restated, candidate, protocol)
     v = ledger.append("verification", timestamp, {
-        **verify(restated, candidate, protocol), "twin_id": tid, "stage": "re-verification",
-        "previous_envelope": product.envelope_snapshot(), **new,
+        **record, "twin_id": tid, "stage": "re-verification",
+        "previous_envelope": product.envelope_snapshot(), "exchange": seal, **new,
     })
+    with tester.exchange.batch("held_out_validation") as seal:
+        result = held_out_validate(restated, candidate, held_out, protocol)
     h = ledger.append("held_out_validation", timestamp, {
         "twin_id": tid, "twin_version": candidate.version, "held_out_ticks": split["held_out"],
-        **held_out_validate(restated, candidate, held_out, protocol), **new,
+        **result, "exchange": seal, **new,
     })
     if not (v["payload"]["passed"] and h["payload"]["passed"]):
         ledger.append("recalibration_rejected", timestamp, {
             "twin_id": tid, "assurance_id": status.assurance_id, "status_unchanged": status.level,
             "verification_passed": v["payload"]["passed"], "held_out_validation_passed": h["payload"]["passed"],
-            "evidence_seq": [v["seq"], h["seq"]],
-            **({"twin_ref": cite["twin_ref"], "candidate_ref": node.ref()} if node else {}),
+            "evidence_seq": [v["seq"], h["seq"]], "twin_ref": cite["twin_ref"], "candidate_ref": node.ref(),
         })
         return None
 
@@ -201,12 +200,16 @@ def run_recalibration(ledger: EvidenceLedger, monitor: FieldMonitor, product: Pr
         "twin_id": tid, "old_assurance_id": status.assurance_id, "old_status_at_supersession": status.level,
         "new_assurance_id": new_id, "effective_from_tick": at_tick,
         "note": "prior assurance and its evidence remain in the ledger unchanged",
-        **({"previous_ref": cite["twin_ref"], "twin_ref": node.ref()} if node else {}),
+        "previous_ref": cite["twin_ref"], "twin_ref": node.ref(),
     })
-    if node:
-        # The new version goes into operation; the system twin's content changed with it.
-        lineage.adopt(product.twin_type, node)
-        lineage.register_system(timestamp, "platform (recomposition after recalibration)", at_tick)
+    # The new version goes into operation; the system twin's content changed with it, so the
+    # twins are run together again before the system can be re-assured.
+    lineage.adopt(product.twin_type, node)
+    lineage.register_system(timestamp, "platform (recomposition after recalibration)", at_tick)
     monitor.reassure(tid, new_id, at_tick, timestamp)
-    monitor.reassess_system(at_tick, timestamp)
+    joint = {**twins, product.twin_type: candidate}
+    ids = {t: monitor.status[p.operational_twin_id].assurance_id for t, p in monitor.registry.products.items()}
+    test = tester.run(joint, timestamp, f"after recalibration of {tid} to {candidate.version}", ids, tick=at_tick)
+    monitor.composition_tested(test, failure_reasons(test), at_tick, timestamp)
+    monitor.reassess_system(at_tick, timestamp, test)
     return candidate

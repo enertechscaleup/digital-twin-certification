@@ -6,6 +6,8 @@ export const CAUSES = {
   envelope_violation: 'Input outside its assured range',
   cascade: 'Cascade: a constituent twin is nullified',
   own_output: 'Output constituent is not assured',
+  interface_invalid: 'Interface: an upstream prediction leaves the downstream twin\'s assured range',
+  interaction_invalid: 'Interaction: the joint prediction misses the combined test bench',
 }
 
 export const short = (h, n = 10) => (h ? `${h.slice(0, n)}…` : '')
@@ -52,6 +54,9 @@ export function summarize(e, who) {
         : `by ${p.registered_by.replace(/^twin owner /, 'owner ').replace(/[()]/g, '')}`
       return `${who(id)} version ${p.twin.version} registered, ${from}, ${how}`
     }
+    case 'probe_set_sealed': return `Probe set sealed for ${p.twin_type}: ${p.probes} inputs, before any version is queried`
+    case 'composition_test': return `Joint composition test ${p.test_id} (${p.trigger}): interface ${p.interface.passed ? 'PASS' : 'FAIL'}, interaction ${p.interaction.passed ? 'PASS' : 'FAIL'}`
+    case 'composition_refused': return `System composition refused: ${p.reasons.map((r) => (r.cause === 'interface_invalid' ? 'interface' : 'interaction')).join(', ')} check failed`
     case 'run_started': return `Run started: scenario "${p.scenario}", seed ${p.seed}. Escalation rules recorded.`
     case 'verification': return `${p.stage === 're-verification' ? 'Re-verification' : 'Verification'} of ${who(p.twin_id)} (twin ${p.twin_version}): ${p.passed ? 'PASS' : 'FAIL'}, ${p.test_points} test points`
     case 'bench_validation': return `Bench validation of ${who(p.twin_id)}: ${p.passed ? 'PASS' : 'FAIL'}, ${p.readings} bench readings`

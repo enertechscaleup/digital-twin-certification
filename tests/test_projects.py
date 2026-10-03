@@ -15,6 +15,7 @@ from engine.registry import load_registry
 from engine.run import run_assurance
 from projects import DEFAULT_PROJECT, PROJECTS_DIR, ProjectError, find_project, list_projects, load_project
 from telemetry.faults import Scenario
+from vendor.endpoint import simulated_vendors
 
 ROOT = Path(__file__).resolve().parent.parent
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -130,8 +131,8 @@ class TestOilGasProject(unittest.TestCase):
             reversed_project = load_project(path)
             self.assertEqual(reversed_project.processing_order, ("motor", "compressor"))
             s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "healthy.json").read_text()))
-            a = run_assurance(s, seed=7, start_time=START)
-            b = run_assurance(s, seed=7, start_time=START, project=reversed_project)
+            a = run_assurance(s, simulated_vendors(), seed=7, start_time=START)
+            b = run_assurance(s, simulated_vendors(reversed_project), seed=7, start_time=START, project=reversed_project)
             self.assertEqual(a.ledger.head_hash, b.ledger.head_hash)
 
 

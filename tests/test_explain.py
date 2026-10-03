@@ -13,6 +13,7 @@ from explain.facts import EvidenceIntegrityError
 from explain import supplementary
 from explain.gemini import CLASSIFICATIONS, RESPONSE_SCHEMA, SUPPLEMENTARY_NOTICE, generate_artifacts
 from telemetry.faults import Scenario
+from vendor.endpoint import simulated_vendors
 
 ROOT = Path(__file__).resolve().parent.parent
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -35,7 +36,7 @@ class FakeGemini:
 
 def wear_run():
     s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "demo_wear_to_nullified.json").read_text()))
-    r = run_assurance(s, seed=42, start_time=START)
+    r = run_assurance(s, simulated_vendors(), seed=42, start_time=START)
     return r.ledger.entries, r.readings, r.timeline
 
 

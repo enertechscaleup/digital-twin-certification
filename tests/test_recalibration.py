@@ -6,11 +6,13 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from engine.boundary import BoundaryError
 from engine.ledger import verify_chain
 from engine.run import run_assurance
 from telemetry.faults import RecalibrationRequest, Scenario, WearDrift
 from vendor.advise import recommend
 from vendor.recalibrate import owner_for_platform, recalibrate
+from vendor.endpoint import simulated_vendors
 
 ROOT = Path(__file__).resolve().parent.parent
 START = datetime(2026, 10, 1, tzinfo=timezone.utc)
@@ -24,7 +26,7 @@ def full_cycle(**overrides):
 
 
 def run(s, recalibrator=owner_for_platform):
-    return run_assurance(s, seed=42, start_time=START, recalibrator=recalibrator, advisor=recommend)
+    return run_assurance(s, simulated_vendors(recalibrator=recalibrator), seed=42, start_time=START)
 
 
 def first(result, entry_type):
@@ -125,8 +127,8 @@ class TestRecalibrationGuards(unittest.TestCase):
         self.assertEqual(first(result, "recalibration_refused")["payload"]["reason"],
                          "twin is assured; nothing to recalibrate")
 
-    def test_scenario_without_owner_is_an_error(self):
-        with self.assertRaises(ValueError):
+    def test_owner_without_recalibration_is_an_error(self):
+        with self.assertRaises(BoundaryError):
             run(full_cycle(), None)
 
     def test_engine_never_imports_the_owner(self):

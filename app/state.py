@@ -38,6 +38,7 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
     open_anomalies: dict[str, dict] = {}
     recalibration: list[dict] = []
     adjustment: list[dict] = []
+    composition_tests: list[dict] = []
     for e in entries:
         t, p = e["entry_type"], e["payload"]
         if t == "assurance_issued":
@@ -60,6 +61,8 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
             tw["reasons"].extend({**r, "since_tick": p["tick"], "ledger_seq": e["seq"]} for r in p["new_reasons"])
             if t == "assurance_status_changed":
                 tw["status"] = p["to"]
+        elif t in ("composition_test", "composition_refused"):
+            composition_tests.append({"seq": e["seq"], "entry_type": t, "tick": e["tick"], "payload": p})
         elif t == "anomaly_opened":
             open_anomalies[p["anomaly_id"]] = {**p, "ledger_seq": e["seq"]}
         elif t == "anomaly_closed":
@@ -95,6 +98,7 @@ def state_at(ev: RunEvidence, tick: int) -> dict:
         "open_anomalies": list(open_anomalies.values()),
         "recalibration": recalibration,
         "adjustment": adjustment,
+        "composition_tests": composition_tests,
         "versions": [{**v, "tick": ev.tick_of(v)} for v in registered_versions(entries)],
         "lineage_recorded": any(e["entry_type"] == REGISTERED for e in ev.core),
         "ledger_entries_so_far": len(entries),

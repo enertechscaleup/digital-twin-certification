@@ -19,6 +19,8 @@ from telemetry.faults import Scenario
 from tests.test_explain import FakeGemini
 from vendor.advise import recommend
 from vendor.recalibrate import owner_for_platform
+from vendor.endpoint import simulated_vendors
+from engine.boundary import ExchangeLog
 
 ROOT = Path(__file__).resolve().parent.parent
 RUN = "assurance-demo_full_cycle-seed42"
@@ -28,9 +30,9 @@ def build_pack(directory: Path) -> str:
     """A fresh evidence pack for RUN in ``directory``, plus a ``runs.json`` there that pins it
     (point RUNS_CONFIG at it). The served runs keep their own pins in app/config/runs.json."""
     s = Scenario.from_dict(json.loads((ROOT / "scenarios" / "demo_full_cycle.json").read_text()))
-    r = run_assurance(s, seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
-                      ledger_path=directory / f"{RUN}.ledger.jsonl", recalibrator=owner_for_platform,
-                      advisor=recommend)
+    r = run_assurance(s, simulated_vendors(), seed=42, start_time=datetime(2026, 10, 1, tzinfo=timezone.utc),
+                      ledger_path=directory / f"{RUN}.ledger.jsonl")
+    ExchangeLog.write_records(r.exchange, directory / f"{RUN}.exchange.jsonl")
     write_jsonl(r.readings, directory / f"{RUN}.readings.jsonl")
     write_jsonl(r.timeline, directory / f"{RUN}.timeline.jsonl")
     sup = supplementary.start(directory / f"{RUN}.supplementary.jsonl", r.ledger.entries)
@@ -67,8 +69,8 @@ class TestDashboardApi(unittest.TestCase):
     def test_meta_reports_verified_evidence(self):
         m = self.client.get(f"/api/runs/{RUN}/meta").json()
         self.assertTrue(m["verification"]["valid"])
-        self.assertEqual(len(m["verification"]["checks"]), 10)
-        self.assertIn("every twin version fingerprinted", m["verification"]["checks"][-1]["check"])
+        self.assertEqual(len(m["verification"]["checks"]), 11)
+        self.assertIn("every twin version measured and fingerprinted", m["verification"]["checks"][-1]["check"])
         self.assertTrue(m["lineage"]["recorded"])
         self.assertEqual([(v["composition"], v["version"]) for v in m["lineage"]["versions"]],
                          [("product", "1.0.0"), ("product", "1.0.0"), ("system", "1"), ("product", "1.1.0"), ("system", "2")])
@@ -168,8 +170,7 @@ class TestDashboardApi(unittest.TestCase):
         self.assertEqual([(c["id"], c["unit"], c["direction"], c["declared_range"]) for c in motor["channels"]],
                          [(c["channel_id"], c["unit"], c["direction"], [c["envelope"]["min"], c["envelope"]["max"]]) for c in cfg["channels"]])
         self.assertEqual(motor["used_by"], ["oil-gas-compressor-train"])
-        self.assertEqual((motor["identity"], motor["version"]), ("twn_7qs95apgsg76zictyyed", "1.0.0"))
-        self.assertEqual(len(motor["fingerprint"]), 64)
+        self.assertEqual(motor["identity"], "twn_7qs95apgsg76zictyyed")
 
     def test_unknown_project(self):
         self.assertEqual(self.client.get("/api/projects/nope").status_code, 404)

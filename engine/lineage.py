@@ -2,51 +2,61 @@
 
 A twin has one permanent, random identity (registry/identities.json), assigned at its
 first registration. Identity says WHO the twin is; it is never derived from what the
-twin contains. Each version of a twin is a lineage node: a content fingerprint over
-everything that determines the twin's behaviour, the owner's version label, and a
-pointer to the version it was derived from (none for the first). Every node is sealed
-in the evidence ledger as its own ``twin_version_registered`` entry before any evidence
-about it, and every later entry cites the exact (identity, version, fingerprint) it is
-about.
+twin contains. Each version of a twin is a lineage node: the owner's version label, a
+fingerprint, and a pointer to the version it was derived from (none for the first).
+Every node is sealed in the evidence ledger as its own ``twin_version_registered``
+entry before any evidence about it, and every later entry cites the exact
+(identity, version, fingerprint) it is about.
 
-* A product twin's fingerprint covers its declared formula identifier, its parameters,
-  and every channel's direction, unit, assured range and tolerance. The code commit the
-  formula identifier refers to is sealed beside the fingerprint in the same entry, not
-  inside it, so an unrelated code change never produces a new version.
-* A system twin's fingerprint covers each constituent's identity and fingerprint, the
-  connections between them, and which constituents produce the system's outputs. A
-  constituent changing version gives the system a new version and a fresh composition
-  record.
+A product twin runs inside its owner's environment (engine/boundary.py), so each
+version carries two fingerprints that are NOT equally authoritative:
+
+* **Measured** (the evidence): the platform seals a probe set of inputs across the
+  twin's assured input ranges, queries the version with it, and fingerprints the
+  declared interface (channels, assured ranges, tolerances) together with the
+  responses. The probe exchange is kept in the exchange file, so anyone can recompute
+  it. This is the fingerprint every citation uses.
+* **Declared** (a claim): the owner's own fingerprint over the formula and parameters it
+  says the twin contains. The platform records it but cannot check it.
+
+A system twin's fingerprint covers each constituent's identity and measured
+fingerprint, the connections, and which constituents produce the system's outputs; any
+constituent changing version gives the system a new version.
 
 Design and operational stages share a twin's identity and versions: the operational twin
 is a version deployed on an asset. A recalibrated twin is registered when its owner
 submits it, with the version it was derived from as parent, whether or not it then passes.
 
 Checking a running twin against its registered fingerprint (runtime swap detection) is
-not done here: see docs/twin-lineage.md.
+not done here: see docs/twin-lineage.md. The probe mechanism is its groundwork.
 """
 
 from __future__ import annotations
 
+import hashlib
+import itertools
 import json
+import random
 import secrets
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Iterator
 
-from engine.ledger import GENESIS_HASH, EvidenceLedger, _entry_hash, sha256_hex
+from engine.boundary import ExchangeLog, RemoteTwin, batch_sha256
+from engine.ledger import EvidenceLedger, canonical_json, sha256_hex
 from engine.registry import ProductTwin, Registry, SystemTwin
 
 ROOT = Path(__file__).resolve().parent.parent
 IDENTITIES = ROOT / "registry" / "identities.json"
-PRODUCT_METHOD = "twin-fingerprint/1"
+PROBE_METHOD = "probe-set/1"
+MEASURED_METHOD = "probe-response/1"
 SYSTEM_METHOD = "system-fingerprint/1"
 REGISTERED = "twin_version_registered"
-# Payload keys lineage adds to entry types that existed before it.
-CITATION_KEYS = frozenset({"twin_ref", "previous_ref", "candidate_ref", "system_ref", "constituent_refs",
-                           "constituent_ref", "version_refs", "final_refs"})
+PROBES_SEALED = "probe_set_sealed"
 REF_FIELDS = ("identity", "version", "fingerprint")
+PROBE_LEVELS = 5  # the same grid verification uses, so what is tested can be matched to what is fingerprinted
+PROBE_RANDOM = 16
 _ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 
 
@@ -102,16 +112,30 @@ def register_identities(registry: Registry, project_id: str, path: Path = IDENTI
 
 # -- fingerprints ------------------------------------------------------------
 
-def product_fingerprint_inputs(product: ProductTwin, model) -> dict:
-    """Everything that determines a product twin's behaviour. ``model`` declares its formula."""
-    return {
-        "method": PRODUCT_METHOD,
-        "formula_id": model.formula_id,
-        "params": dict(model.params),
-        "channels": [{"channel_id": c.channel_id, "direction": c.direction, "unit": c.unit,
-                      "assured_range": {"min": c.env_min, "max": c.env_max}, "tolerance_pct": c.tolerance_pct}
-                     for c in sorted(product.channels, key=lambda c: c.channel_id)],
-    }
+def interface(product: ProductTwin) -> list[dict]:
+    """The twin's declared interface: what it takes and gives, and what is assured."""
+    return [{"channel_id": c.channel_id, "direction": c.direction, "unit": c.unit,
+             "assured_range": {"min": c.env_min, "max": c.env_max}, "tolerance_pct": c.tolerance_pct}
+            for c in sorted(product.channels, key=lambda c: c.channel_id)]
+
+
+def probe_set(product: ProductTwin, identity: str) -> list[dict]:
+    """Inputs the platform queries every version of a twin with: the verification grid
+    across each input's assured range, plus seeded points inside it. The same for every
+    version of the twin, so their responses are comparable."""
+    axes = [[c.env_min + i * (c.env_max - c.env_min) / (PROBE_LEVELS - 1) for i in range(PROBE_LEVELS)]
+            for c in product.inputs]
+    ids = [c.channel_id for c in product.inputs]
+    grid = [dict(zip(ids, combo)) for combo in itertools.product(*axes)]
+    rng = random.Random(hashlib.sha256(f"{identity}|{PROBE_METHOD}".encode()).hexdigest())
+    extra = [{c.channel_id: round(rng.uniform(c.env_min, c.env_max), 4) for c in product.inputs}
+             for _ in range(PROBE_RANDOM)]
+    return grid + extra
+
+
+def measured_inputs(product: ProductTwin, probes: list[dict], responses: list[dict]) -> dict:
+    return {"method": MEASURED_METHOD, "interface": interface(product),
+            "probe_set_sha256": sha256_hex(probes), "responses_sha256": sha256_hex(responses)}
 
 
 def system_fingerprint_inputs(constituents: list[dict], system: SystemTwin) -> dict:
@@ -126,11 +150,11 @@ def system_fingerprint_inputs(constituents: list[dict], system: SystemTwin) -> d
     }
 
 
-def _envelope(inputs: dict) -> dict:
-    """A product fingerprint's channels, in the shape ``ProductTwin.envelope_snapshot`` records."""
+def _envelope(channels: list[dict]) -> dict:
+    """An interface, in the shape ``ProductTwin.envelope_snapshot`` records."""
     return {c["channel_id"]: {"direction": c["direction"], "min": c["assured_range"]["min"],
                               "max": c["assured_range"]["max"], "tolerance_pct": c["tolerance_pct"], "unit": c["unit"]}
-            for c in inputs["channels"]}
+            for c in channels}
 
 
 # -- the lineage of one run --------------------------------------------------
@@ -150,10 +174,11 @@ class Node:
 class Lineage:
     """The versions registered in one run's ledger, and which version of each twin is in operation."""
 
-    def __init__(self, ledger: EvidenceLedger, registry: Registry, project_id: str,
+    def __init__(self, ledger: EvidenceLedger, registry: Registry, project_id: str, exchange: ExchangeLog,
                  identities: list[dict] | None = None, code_commit: str | None = None):
         identities = load_identities() if identities is None else identities
-        self.ledger, self.registry, self.project_id, self.code_commit = ledger, registry, project_id, code_commit
+        self.ledger, self.registry, self.project_id, self.exchange = ledger, registry, project_id, exchange
+        self.code_commit = code_commit
         self.identity: dict[str, str] = {}
         for t, p in registry.products.items():
             self.identity[t] = product_identity(identities, p.vendor, p.design_twin_id)
@@ -167,34 +192,61 @@ class Lineage:
         self._type_of = {i: t for t, p in registry.products.items() for i in (p.design_twin_id, p.operational_twin_id)}
         sys = registry.system
         self._system_ids = {sys.design_system_twin_id, sys.operational_system_twin_id}
+        self._probes: dict[str, list[dict]] = {}
         self.nodes: list[Node] = []
         self.current: dict[str, Node] = {}  # twin type -> the version in operation
         self.system: Node | None = None
 
-    def register_product(self, twin_type: str, product: ProductTwin, model, ts: str, registered_by: str,
-                         tick: int | None = None) -> Node:
-        """Seal a version of a product twin. The parent is the version in operation, if any.
-        Raises LineageError if the owner reuses a version label for different content."""
+    def evidence_twin(self, twin_type: str, remote: RemoteTwin) -> RemoteTwin:
+        """``remote``, with every query recorded in the exchange log under its identity."""
+        return remote.with_log(self.exchange, self.identity[twin_type])
+
+    def _probe_set(self, twin_type: str, product: ProductTwin, ts: str) -> list[dict]:
+        """The twin's probe set, sealed in the ledger before it is first used."""
+        if twin_type not in self._probes:
+            probes = probe_set(product, self.identity[twin_type])
+            self.ledger.append(PROBES_SEALED, ts, {
+                "identity": self.identity[twin_type], "twin_type": twin_type, "method": PROBE_METHOD,
+                "probes": len(probes), "probe_set_sha256": sha256_hex(probes),
+                "note": "sealed before any version of this twin is queried with it",
+            })
+            self._probes[twin_type] = probes
+        return self._probes[twin_type]
+
+    def register_product(self, twin_type: str, product: ProductTwin, remote: RemoteTwin, ts: str,
+                         registered_by: str, tick: int | None = None) -> Node:
+        """Measure and seal a version of a product twin. The parent is the version in operation,
+        if any. Raises LineageError if the owner reuses a version label for different behaviour."""
         identity = self.identity[twin_type]
-        inputs = product_fingerprint_inputs(product, model)
+        probes = self._probe_set(twin_type, product, ts)
+        twin = self.evidence_twin(twin_type, remote)
+        with self.exchange.batch("probe") as seal:
+            responses = [twin.predict(p) for p in probes]
+        inputs = measured_inputs(product, probes, responses)
         fp = sha256_hex(inputs)
         for n in self.nodes:
-            if n.identity == identity and n.version == model.version:
+            if n.identity == identity and n.version == remote.version:
+                self.exchange.discard(seal)
                 if n.fingerprint == fp:
                     return n
-                raise LineageError(f"version {model.version} of {product.design_twin_id} is already registered "
-                                   "with different content; a changed twin needs a new version label")
+                raise LineageError(f"version {remote.version} of {product.design_twin_id} is already registered "
+                                   "and now behaves differently; a changed twin needs a new version label")
+        declared = remote.describe()
         parent = self.current.get(twin_type)
         e = self.ledger.append(REGISTERED, ts, {
-            "twin": {"identity": identity, "version": model.version, "fingerprint": fp},
+            "twin": {"identity": identity, "version": remote.version, "fingerprint": fp},
             "parent_fingerprint": parent.fingerprint if parent else None,
             "composition": "product", "twin_type": twin_type, "vendor": product.vendor,
             "design_twin_id": product.design_twin_id, "operational_twin_id": product.operational_twin_id,
             "asset_id": product.asset_id, "registered_by": registered_by,
             **({"tick": tick} if tick is not None else {}),
-            "fingerprint_inputs": inputs, "code_commit": self.code_commit,
+            "measured": {"authority": "evidence: measured by the platform from sealed probe inputs",
+                         "fingerprint": fp, "inputs": inputs, "exchange": seal},
+            "declared": {"authority": "claim: declared by the twin owner; the platform cannot check it",
+                         "fingerprint": declared["declared_fingerprint"], "method": declared["declared_method"]},
+            "code_commit": self.code_commit,
         })
-        node = Node(identity, model.version, fp, parent.fingerprint if parent else None, e["seq"])
+        node = Node(identity, remote.version, fp, parent.fingerprint if parent else None, e["seq"])
         self.nodes.append(node)
         return node
 
@@ -219,7 +271,10 @@ class Lineage:
             "design_system_twin_id": sys.design_system_twin_id,
             "operational_system_twin_id": sys.operational_system_twin_id,
             "registered_by": registered_by, **({"tick": tick} if tick is not None else {}),
-            "constituents": constituents, "fingerprint_inputs": inputs, "code_commit": self.code_commit,
+            "constituents": constituents,
+            "measured": {"authority": "evidence: computed by the platform from the constituents' measured fingerprints",
+                         "fingerprint": fp, "inputs": inputs},
+            "code_commit": self.code_commit,
         })
         self.system = Node(self.system_identity, version, fp, parent.fingerprint if parent else None, e["seq"])
         self.nodes.append(self.system)
@@ -274,6 +329,7 @@ class LineageCheck:
     valid: bool
     versions: int = 0
     citations: int = 0
+    exchanges: int = 0
     reason: str | None = None
 
 
@@ -289,26 +345,53 @@ def _refs(obj) -> Iterator[dict]:
             yield from _refs(v)
 
 
-def verify_lineage(core: list[dict], readings: list[dict]) -> LineageCheck:
-    """Check, from the ledger alone, that every registered version's fingerprint matches its
-    sealed inputs, every parent is an earlier version of the same twin, no version label is
-    reused for different content, every entry cites a version registered before it (of the
-    twin it is about), what was tested is what was fingerprinted, and every reading resolves
-    to a registered version."""
+def _seals(obj) -> Iterator[dict]:
+    """Every exchange batch seal anywhere inside ``obj``."""
+    if isinstance(obj, dict):
+        if "batch" in obj and "sha256" in obj and "calls" in obj:
+            yield obj
+        for v in obj.values():
+            yield from _seals(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _seals(v)
+
+
+def verify_lineage(core: list[dict], readings: list[dict], exchange: list[dict] | None = None) -> LineageCheck:
+    """Check, from the ledger and the exchange file alone, that:
+
+    * every exchange batch matches its seal, and every exchange is sealed;
+    * every measured fingerprint matches its sealed inputs, and those inputs match the
+      sealed probe set and the recorded responses;
+    * every parent is an earlier version of the same twin, and no version label is
+      reused for a different fingerprint;
+    * every entry cites a version registered before it, of the twin it is about;
+    * what was tested is what was fingerprinted: same assured ranges, and every
+      verification answer equals the probe answer to the same inputs;
+    * every reading resolves to a registered version.
+
+    The owner-declared fingerprints are claims and are not checked."""
     regs = [e for e in core if e["entry_type"] == REGISTERED]
     if not regs:
         if any(True for e in core for _ in _refs(e["payload"])):
             return LineageCheck(False, False, reason="cites twin versions but registers none")
         return LineageCheck(False, True)
+    exchange = exchange or []
 
     nodes: dict[str, dict] = {}  # fingerprint -> node
     labels: dict[tuple[str, str], str] = {}
     owner: dict[str, str] = {}  # twin id -> identity
+    probe_sets: dict[str, str] = {}  # identity -> sealed probe set hash
+    answers: dict[tuple[str, str, str], object] = {}  # (identity, version, inputs) -> probe outputs
+    batches: dict[str, list[dict]] = {}
+    for r in exchange:
+        batches.setdefault(r["batch"], []).append(r)
+    sealed: set[str] = set()
     checkpoints: list[dict] = []
     citations = 0
 
     def fail(seq: int, why: str) -> LineageCheck:
-        return LineageCheck(True, False, len(nodes), citations, f"entry {seq}: {why}")
+        return LineageCheck(True, False, len(nodes), citations, len(exchange), f"entry {seq}: {why}")
 
     def known(r: dict) -> bool:
         n = nodes.get(r["fingerprint"])
@@ -316,13 +399,38 @@ def verify_lineage(core: list[dict], readings: list[dict]) -> LineageCheck:
 
     for e in core:
         p, seq, kind = e["payload"], e["seq"], e["entry_type"]
+        for s in _seals(p):
+            rows = batches.get(s["batch"], [])
+            if s["batch"] in sealed or len(rows) != s["calls"] or sha256_hex(rows) != s["sha256"]:
+                return fail(seq, f"exchange batch {s['batch']} does not match its seal")
+            sealed.add(s["batch"])
+        if kind == PROBES_SEALED:
+            probe_sets[p["identity"]] = p["probe_set_sha256"]
+            continue
         if kind == REGISTERED:
-            twin, inputs = p["twin"], p["fingerprint_inputs"]
-            method = PRODUCT_METHOD if p["composition"] == "product" else SYSTEM_METHOD
-            if inputs.get("method") != method:
-                return fail(seq, f"unknown fingerprint method {inputs.get('method')!r}")
-            if sha256_hex(inputs) != twin["fingerprint"]:
+            twin, m = p["twin"], p["measured"]
+            if sha256_hex(m["inputs"]) != twin["fingerprint"] or m["fingerprint"] != twin["fingerprint"]:
                 return fail(seq, "fingerprint does not match the inputs sealed with it")
+            if p["composition"] == "product":
+                rows = batches.get(m["exchange"]["batch"], [])
+                probes = [r["inputs"] for r in rows]
+                if m["inputs"].get("method") != MEASURED_METHOD:
+                    return fail(seq, f"unknown fingerprint method {m['inputs'].get('method')!r}")
+                if probe_sets.get(twin["identity"]) != m["inputs"]["probe_set_sha256"] or sha256_hex(probes) != m["inputs"]["probe_set_sha256"]:
+                    return fail(seq, "probe inputs are not the probe set sealed for this twin")
+                if sha256_hex([r["outputs"] for r in rows]) != m["inputs"]["responses_sha256"]:
+                    return fail(seq, "measured fingerprint does not match the recorded probe responses")
+                if any(r["identity"] != twin["identity"] or r["version"] != twin["version"] for r in rows):
+                    return fail(seq, "probe exchange was with another twin or version")
+                for r in rows:
+                    answers[(twin["identity"], twin["version"], canonical_json(r["inputs"]))] = r["outputs"]
+            else:
+                if m["inputs"].get("method") != SYSTEM_METHOD:
+                    return fail(seq, f"unknown fingerprint method {m['inputs'].get('method')!r}")
+                cited = sorted(({k: c[k] for k in ("twin_type", "identity", "fingerprint")} for c in p["constituents"]),
+                               key=lambda c: c["twin_type"])
+                if cited != m["inputs"]["constituents"] or not all(known(c) for c in p["constituents"]):
+                    return fail(seq, "system version's constituents are not the registered versions it cites")
             parent = p["parent_fingerprint"]
             if parent is None:
                 if any(n["identity"] == twin["identity"] for n in nodes.values()):
@@ -331,17 +439,11 @@ def verify_lineage(core: list[dict], readings: list[dict]) -> LineageCheck:
                 return fail(seq, "parent is not an earlier version of the same twin")
             key = (twin["identity"], twin["version"])
             if labels.get(key, twin["fingerprint"]) != twin["fingerprint"]:
-                return fail(seq, f"version label {twin['version']} reused for different content")
-            if p["composition"] == "system":
-                cited = sorted(({k: c[k] for k in ("twin_type", "identity", "fingerprint")} for c in p["constituents"]),
-                               key=lambda c: c["twin_type"])
-                if cited != inputs["constituents"] or not all(known(c) for c in p["constituents"]):
-                    return fail(seq, "system version's constituents are not the registered versions it cites")
+                return fail(seq, f"version label {twin['version']} reused for a different fingerprint")
             for k in ("design_twin_id", "operational_twin_id", "design_system_twin_id", "operational_system_twin_id"):
-                if k in p:
-                    if owner.setdefault(p[k], twin["identity"]) != twin["identity"]:
-                        return fail(seq, f"{p[k]} is registered under two identities")
-            nodes[twin["fingerprint"]] = {**twin, "inputs": inputs}
+                if k in p and owner.setdefault(p[k], twin["identity"]) != twin["identity"]:
+                    return fail(seq, f"{p[k]} is registered under two identities")
+            nodes[twin["fingerprint"]] = {**twin, "inputs": m["inputs"]}
             labels[key] = twin["fingerprint"]
             continue
 
@@ -355,71 +457,51 @@ def verify_lineage(core: list[dict], readings: list[dict]) -> LineageCheck:
         own = p.get("twin_ref")
         if own and owner.get(p.get("twin_id"), own["identity"]) != own["identity"]:
             return fail(seq, f"cites another twin's version for {p['twin_id']}")
-        if own and (kind == "verification" or (kind == "assurance_issued" and "envelope" in p)):
-            inputs = nodes[own["fingerprint"]]["inputs"]
-            if kind == "verification" and p["twin_params"] != inputs["params"]:
-                return fail(seq, "tested parameters differ from the fingerprinted version")
-            if p["envelope"] != _envelope(inputs):
+        if own and "envelope" in p and kind in ("verification", "assurance_issued"):
+            if p["envelope"] != _envelope(nodes[own["fingerprint"]]["inputs"]["interface"]):
                 return fail(seq, "assured ranges differ from the fingerprinted version")
+        if own and kind == "verification":
+            for r in batches.get(p["exchange"]["batch"], []):
+                if (r["identity"], r["version"]) != (own["identity"], own["version"]) or \
+                        canonical_json(answers.get((own["identity"], own["version"], canonical_json(r["inputs"])))) != canonical_json(r["outputs"]):
+                    return fail(seq, "the twin tested answered differently from the twin fingerprinted")
         if kind == "readings_checkpoint":
             for v in p["version_refs"]:
                 if "identity" in v and owner.get(v["twin_id"]) != v["identity"]:
                     return fail(seq, f"cites another twin's version for {v['twin_id']}")
             checkpoints.append(p)
 
+    unsealed = set(batches) - sealed
+    if unsealed:
+        return LineageCheck(True, False, len(nodes), citations, len(exchange),
+                            f"exchange batch {sorted(unsealed)[0]} is not sealed in the ledger")
+    for r in exchange:
+        if (r["identity"], r["version"]) not in labels:
+            return LineageCheck(True, False, len(nodes), citations, len(exchange),
+                                f"exchange batch {r['batch']} was with an unregistered version")
     for r in readings:
         cp = next((c for c in checkpoints if c["from_tick"] <= r["tick"] <= c["to_tick"]), None)
         if cp is None or not any(v["twin_id"] == r["twin_id"] and v["version"] == r["twin_version"]
                                  and v.get("fingerprint") for v in cp["version_refs"]):
-            return LineageCheck(True, False, len(nodes), citations,
+            return LineageCheck(True, False, len(nodes), citations, len(exchange),
                                 f"reading at tick {r['tick']} ({r['twin_id']} {r['twin_version']}) "
                                 "does not resolve to a registered version")
-    return LineageCheck(True, True, len(nodes), citations)
+    return LineageCheck(True, True, len(nodes), citations, len(exchange))
 
 
 def registered_versions(entries: list[dict]) -> list[dict]:
     """The lineage nodes registered in ``entries``, flattened for display."""
     keep = ("composition", "twin_type", "vendor", "design_twin_id", "operational_twin_id", "asset_id", "project_id",
             "design_system_twin_id", "operational_system_twin_id", "registered_by", "constituents", "code_commit")
-    return [{"seq": e["seq"], "timestamp": e["timestamp"], **e["payload"]["twin"],
-             "parent_fingerprint": e["payload"]["parent_fingerprint"],
-             "formula_id": e["payload"]["fingerprint_inputs"].get("formula_id"),
-             **{k: e["payload"][k] for k in keep if k in e["payload"]}}
-            for e in entries if e["entry_type"] == REGISTERED]
-
-
-# -- the same ledger without lineage -------------------------------------------
-
-def _strip(obj):
-    if isinstance(obj, dict):
-        return {k: _strip(v) for k, v in obj.items() if k not in CITATION_KEYS}
-    if isinstance(obj, list):
-        return [_strip(v) for v in obj]
-    return obj
-
-
-def legacy_projection(entries: list[dict]) -> list[dict]:
-    """The ledger with everything lineage added taken out: registration entries dropped,
-    citations removed, sequence numbers and hash references re-pointed, and the chain
-    rebuilt in the pre-lineage format. Lineage is purely additive exactly when this
-    reproduces, hash for hash, the ledger the same run produced before lineage existed."""
-    out: list[dict] = []
-    seqs: dict[int, int] = {}
-    hashes: dict[str, str] = {}
+    out = []
     for e in entries:
-        if e["entry_type"] == REGISTERED:
+        if e["entry_type"] != REGISTERED:
             continue
-        payload = _strip(e["payload"])
-        if "evidence_seq" in payload:
-            payload["evidence_seq"] = [seqs[s] for s in payload["evidence_seq"]]
-        if "recommendation_seq" in payload:
-            payload["recommendation_seq"] = seqs[payload["recommendation_seq"]]
-        if "recommendation_entry_hash" in payload:
-            payload["recommendation_entry_hash"] = hashes[payload["recommendation_entry_hash"]]
-        legacy = {"ledger_format_version": 1, "seq": len(out), "entry_type": e["entry_type"],
-                  "timestamp": e["timestamp"], "prev_hash": out[-1]["entry_hash"] if out else GENESIS_HASH,
-                  "payload": payload}
-        legacy["entry_hash"] = _entry_hash(legacy)
-        seqs[e["seq"]], hashes[e["entry_hash"]] = legacy["seq"], legacy["entry_hash"]
-        out.append(legacy)
+        p = e["payload"]
+        out.append({"seq": e["seq"], "timestamp": e["timestamp"], **p["twin"],
+                    "parent_fingerprint": p["parent_fingerprint"],
+                    "measured": {"fingerprint": p["measured"]["fingerprint"], "authority": p["measured"]["authority"],
+                                 **({"probes": p["measured"]["exchange"]["calls"]} if "exchange" in p["measured"] else {})},
+                    "declared": p.get("declared"),
+                    **{k: p[k] for k in keep if k in p}})
     return out
