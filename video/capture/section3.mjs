@@ -270,7 +270,7 @@ const SHOTS = {
     await sleep(1400)
     mark('click_verify')
     await click(p, p.getByRole('button', { name: /Re-verify now/ }), 900)
-    await p.getByText(/just now in/).waitFor({ timeout: 60000 })
+    await p.getByText(/just now in/).waitFor({ timeout: 180000 })
     mark('verified')
     await sleep(400); mark('integrity_still'); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_integrity.png') })
     boxes.integrity = await panel(p, 'Evidence integrity').boundingBox()

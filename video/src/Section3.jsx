@@ -34,13 +34,18 @@ export const SECTION3_FRAMES = 2884
 export const SECTION3_SHOTS = SHOTS
 
 function s11Segments() {
-  const m = DATA.s1_1.marks
-  return [[m.to_first, m.on_first, 6], [m.on_first, m.to_second, 2], [m.to_second, m.on_second, 6], [m.on_second, m.to_open, 2]]
+  // Rests on each project at double speed (1.5 s); the pointer's travel fills the rest of the shot.
+  const m = DATA.s1_1.marks, len = SHOTS.find((x) => x.id === 's1_1').len / FPS
+  const glide = (m.on_first - m.to_first + m.on_second - m.to_second) / (len - (m.to_second - m.on_first + m.to_open - m.on_second) / 2)
+  return [[m.to_first, m.on_first, glide], [m.on_first, m.to_second, 2], [m.to_second, m.on_second, glide], [m.on_second, m.to_open, 2]]
 }
 
 function s42Segments() {
   const m = DATA.s4_2.marks
-  return [[m.click_ledger, m.ledger_still, 3], [m.ledger_still, m.ledger_still + 2.6, 1], [m.ledger_still + 2.6, m.verified, 4], [m.verified, m.end, 1]]
+  // The round trip to the evidence store is shortened to half a second; the result on screen
+  // still reports the real time it took.
+  return [[m.click_ledger, m.ledger_still, 3], [m.ledger_still, m.ledger_still + 2.6, 1], [m.ledger_still + 2.6, m.click_verify + 1, 3],
+    [m.click_verify + 1, m.verified, (m.verified - m.click_verify - 1) / 0.5], [m.verified, m.end, 1]]
 }
 
 /** Source time (s) in a recording for a local frame, through [from, to, speed] segments. */
