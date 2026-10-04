@@ -1,8 +1,8 @@
-// Section 2 (0:24–0:56): TwinEvidence as a library of vendor-owned twins.
+// Section 2 (0:16–0:53): TwinEvidence as a library of vendor-owned twins.
 // Find (browse the library), Test (the system owner's governance layer runs across an
 // assembled configuration, and what it captures lands in the evidence store), Combine
 // (several candidate configurations in quick succession, the governance layer re-forming
-// across each). Frames are local to the section (0–950), timed to the v3 narration.
+// across each). Frames are local to the section, timed to the v4 narration.
 // Vendors are generic letters, not real companies.
 
 const BASE = 0.42 // brightness of twins that are not in focus
@@ -18,20 +18,22 @@ export const TWINS = [
   { id: 'G', vendor: 'Vendor G', label: 'Substation twin', kind: 'substation', at: [5.4, 4.5], scale: 1.2, fresh: true },
 ]
 
-// The three candidate system configurations and their timings.
+// The three candidate system configurations and their timings. v4's longer Test line holds
+// the first candidate HOLD frames longer; everything from Combine on moves later with it.
+const HOLD = 140
 export const CANDIDATES = [
-  { members: ['A', 'B', 'C', 'D'], bright: 426, links: [496, 576], gov: [560, 606], hide: [794, 810] },
-  { members: ['A', 'E', 'C', 'D'], bright: 810, links: [810, 850], gov: [828, 850], hide: [870, 880] },
-  { members: ['F', 'E', 'G', 'D'], bright: 880, links: [880, 920], gov: [898, 920] },
+  { members: ['A', 'B', 'C', 'D'], bright: 426, links: [496, 576], gov: [560, 606], hide: [794 + HOLD, 810 + HOLD] },
+  { members: ['A', 'E', 'C', 'D'], bright: 810 + HOLD, links: [810 + HOLD, 850 + HOLD], gov: [828 + HOLD, 850 + HOLD], hide: [870 + HOLD, 880 + HOLD] },
+  { members: ['F', 'E', 'G', 'D'], bright: 880 + HOLD, links: [880 + HOLD, 920 + HOLD], gov: [898 + HOLD, 920 + HOLD] },
 ]
-export const SECTION2_FRAMES = 951
+export const SECTION2_FRAMES = 951 + HOLD
 // Within a candidate: geothermal → battery → substation → data center, plus geothermal → substation.
 const linkPairs = ([geo, bat, sub, dc]) => [[geo, bat], [bat, sub], [sub, dc], [geo, sub]]
 
 export const BEATS = [
   { word: 'Find.', at: 425 },
   { word: 'Test.', at: 484 },
-  { word: 'Combine.', at: 810 },
+  { word: 'Combine.', at: 810 + HOLD },
 ]
 
 // Back-row graphs stand above and beside their twins. Front-row twins sit in the gaps
@@ -75,7 +77,7 @@ export const LIBRARY = {
   camera: [
     { f: 0, pos: [0, 17, 32], look: [0, 0.6, -0.4] },
     { f: 426, pos: [0, 16, 30.5], look: [0, 0.8, -0.4] },
-    { f: 951, pos: [0.9, 15.5, 30], look: [0.9, 1.0, -0.4] },
+    { f: SECTION2_FRAMES, pos: [0.9, 15.5, 30], look: [0.9, 1.0, -0.4] },
   ],
   flow: { speed: 0.011 },
 }

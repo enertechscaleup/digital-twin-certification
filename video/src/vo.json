@@ -1,7 +1,7 @@
 {
  "s2_intro": 13.584,
  "s2_find": 1.656,
- "s2_test": 10.584,
+ "s2_test": 15.264,
  "s2_combine": 4.344,
  "s3_projects": 9.864,
  "s3_oilgas": 10.464,
@@ -11,7 +11,9 @@
  "s3_beat4": 15.216,
  "s4_message": 13.608,
  "s4_proof": 5.976,
- "s1_vision": 19.248,
+ "s1_vision": 15.576,
  "s3_lineage": 11.976,
- "s3_joint": 21.624
+ "s3_joint": 21.624,
+ "s3_gemini": 13.728,
+ "s3_close": 19.176
 }

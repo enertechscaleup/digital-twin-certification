@@ -3,8 +3,8 @@ import WireframeScene from '@visual/wireframe/WireframeScene.jsx'
 import { VISION } from './vision.js'
 import { SCENE_COLORS, TOKENS, serif, serifItalic } from './theme.js'
 
-// Section 1 — Vision (0:00–0:24). The statement lands first and fades before the voiceover
-// begins (5 s in), so the narration's technical content has the screen to itself.
+// Section 1 — Vision (0:00–0:16.5). The statement lands first and fades as the build begins;
+// in v4 the voiceover starts under it.
 export function Section1() {
   const frame = useCurrentFrame()
   const { width, height } = useVideoConfig()

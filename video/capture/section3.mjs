@@ -251,6 +251,39 @@ const SHOTS = {
     boxes: (p) => ({ row: p.locator('.status-row'), system: p.locator('.twin-card.is-system') }),
   }]),
 
+  // Gemini explains it (v4): the grounded assistant answers live, on the motor view at the tick
+  // the motor is flagged, then the sealed Gemini explanation of the same event. Recorded from
+  // the live service, so the answer is a real Gemini call made during the recording.
+  'gem': (b) => interaction(b, 'gem', async (p) => {
+    await p.goto(`${BASE}/?run=${RUN}&tick=20#oil-gas-compressor-train`)
+    await waitTick(p, 20)
+    await toTop(panel(p, 'Evidence assistant'), 110)
+    await sleep(600)
+  }, async (p, mark, boxes) => {
+    await sleep(1000)
+    const ask = panel(p, 'Evidence assistant')
+    boxes.assistant = await ask.boundingBox()
+    mark('click_ask')
+    await click(p, ask.locator('button.chip', { hasText: /flagged/ }).first(), 1000)
+    await p.getByText('Looking through the evidence').waitFor()
+    mark('thinking')
+    await ask.locator('.assistant-answer').first().waitFor({ timeout: 180000 })
+    mark('answered')
+    await sleep(500); mark('answer_still'); await p.screenshot({ path: path.join(OUT, 'gem', 'hold_answer.png') })
+    boxes.answer = await ask.locator('.assistant-answer').first().boundingBox()
+    boxes.question = await ask.locator('.assistant-answer').first().locator('xpath=..').boundingBox()
+    await sleep(1500)
+    mark('scroll')
+    await p.evaluate(() => { const el = [...document.querySelectorAll('.panel')].find((x) => x.querySelector('h2')?.textContent.includes('AI explanations')); window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 110, behavior: 'smooth' }) })
+    await sleep(1600)
+    mark('sealed_still'); await p.screenshot({ path: path.join(OUT, 'gem', 'hold_sealed.png') })
+    const sealed = p.locator('.panel', { has: p.locator('h2', { hasText: /AI explanations$/ }) })
+    boxes.sealed = await sealed.locator('li').first().boundingBox()
+    boxes.explanations = await sealed.boundingBox()
+    await sleep(2000)
+    mark('end')
+  }, 2),
+
   // 4.2 Evidence: hash-chained ledger entry, then re-verify from the evidence store.
   's4_2': (b) => interaction(b, 's4_2', async (p) => {
     await p.goto(`${BASE}/?run=${RUN}&tick=79&stage=system#oil-gas-compressor-train`)

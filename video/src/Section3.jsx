@@ -2,7 +2,7 @@ import { AbsoluteFill, Easing, Img, Sequence, interpolate, staticFile, useCurren
 import DATA from './s3data.json'
 import { TOKENS, sans, serif } from './theme.js'
 
-// Section 3 — The real platform (0:55–2:33). Recorded from the built platform served locally
+// Section 3 — The real platform (0:53–2:45). Recorded from the built platform served locally
 // (capture/section3.mjs). Draft cut of the v3 script: recorded from the local lineage run; the
 // final cut is re-recorded from the regenerated evidence. Calmer than Sections 1–2: plain cuts
 // with short dissolves, and status colours appear here only.
@@ -11,7 +11,7 @@ const FPS = 30
 const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
 const FADE = 8
 
-// Shot list (script v3): start frame, length, and how each recording maps onto it. Each beat is
+// Shot list (script v3, plus v4's Gemini shot): start frame, length, and how each recording maps onto it. Each beat is
 // sized to its narration line (src/vo.json) plus a little air; the narration lands 0.3 s in.
 // Beat 4 shows the ledger and integrity (4.2) before composition (4.1), so "which vendor's twin
 // diverged, and which didn't" lands on the composition patterns.
@@ -27,10 +27,12 @@ const SHOTS = [
   { id: 'joint', at: 1741, len: 665 },
   // The ledger opens, then the integrity panel re-verifies; the pointer travel and scroll run
   // faster, the moments the camera closes in on run in real time (from the recorded marks).
-  { id: 's4_2', at: 2406, len: 270, stills: [{ from: 'ledger_still', to: 'scroll', file: 'hold_ledger.png' }, { from: 'integrity_still', to: 'end', file: 'hold_integrity.png' }] },
-  { id: 's4_1', at: 2676, len: 208, segments: [[1.0, 11.0, 1.44]] },
+  // Gemini explains it (v4): the live assistant answer, then the sealed explanation beside it.
+  { id: 'gem', at: 2406, len: 480 },
+  { id: 's4_2', at: 2886, len: 270, stills: [{ from: 'ledger_still', to: 'scroll', file: 'hold_ledger.png' }, { from: 'integrity_still', to: 'end', file: 'hold_integrity.png' }] },
+  { id: 's4_1', at: 3156, len: 208, segments: [[1.0, 11.0, 1.44]] },
 ]
-export const SECTION3_FRAMES = 2884
+export const SECTION3_FRAMES = 3364
 export const SECTION3_SHOTS = SHOTS
 
 function s11Segments() {
@@ -48,6 +50,14 @@ function s42Segments() {
     [m.click_verify + 1, m.verified, (m.verified - m.click_verify - 1) / 0.5], [m.verified, m.end, 1]]
 }
 
+function gemSegments() {
+  // The click plays in real time; the wait for Gemini's answer (about 13 s on the live service)
+  // is shortened to 1.2 s, and a label on screen says so; the answer then holds for reading.
+  const m = DATA.gem.marks, len = SHOTS.find((x) => x.id === 'gem').len / FPS
+  const rest = len - m.thinking - 1.2
+  return [[0, m.thinking, 1], [m.thinking, m.answered, (m.answered - m.thinking) / 1.2], [m.answered, m.end, (m.end - m.answered) / rest]]
+}
+
 /** Source time (s) in a recording for a local frame, through [from, to, speed] segments. */
 function sourceTime(segments, f) {
   let t = f / FPS
@@ -60,7 +70,7 @@ function sourceTime(segments, f) {
   return to
 }
 
-function Screencast({ shot, segments, camera, stills = [] }) {
+function Screencast({ shot, segments, camera, stills = [], children }) {
   const f = useCurrentFrame()
   const frames = DATA[shot].frames
   const t = sourceTime(segments, f)
@@ -72,6 +82,7 @@ function Screencast({ shot, segments, camera, stills = [] }) {
     <AbsoluteFill style={{ background: TOKENS.paper, overflow: 'hidden' }}>
       <Img src={staticFile(`s3/${shot}/${still ? still.file : frames[i].file}`)}
         style={{ width: 1920, height: 1080, transform: `translate(${view.x}px, ${view.y}px) scale(${view.s})`, transformOrigin: '0 0' }} />
+      {children}
     </AbsoluteFill>
   )
 }
@@ -161,6 +172,29 @@ const camera42 = (f) => {
   return blend(FULL, integrity, interpolate(f, [at('verified') - 10, at('verified') + 16], [0, 1], { ...clamp, easing: ease }))
 }
 
+// Gemini: close on the assistant as the question is asked, then on the live answer; as the
+// narration reaches "plain-language explanation", across to the sealed Gemini explanation.
+const cameraGem = (f) => {
+  const { boxes, marks } = DATA.gem
+  const at = (k) => localFrame(gemSegments(), marks[k])
+  const panel = fit(boxes.assistant, 1.15), answer = fit(unite(boxes.question, boxes.answer), 1.08), sealed = fit(boxes.sealed, 1.3)
+  if (f < at('answered')) return blend(FULL, panel, interpolate(f, [at('click_ask') + 14, at('thinking') + 6], [0, 1], { ...clamp, easing: ease }))
+  if (f < 300) return blend(panel, answer, interpolate(f, [at('answered'), at('answered') + 24], [0, 1], { ...clamp, easing: ease }))
+  return blend(answer, sealed, interpolate(f, [300, 336], [0, 1], { ...clamp, easing: ease }))
+}
+
+function GemLabel() {
+  const f = useCurrentFrame()
+  const m = DATA.gem.marks, at = (k) => localFrame(gemSegments(), m[k])
+  const o = interpolate(f, [at('thinking'), at('thinking') + 6, at('answered') + 4, at('answered') + 14], [0, 1, 1, 0], clamp)
+  return (
+    <div style={{ position: 'absolute', right: 70, top: 60, opacity: o, padding: '12px 20px', background: TOKENS.ink, color: TOKENS.paperLight,
+      fontFamily: sans, fontSize: 22, fontWeight: 700, letterSpacing: '0.04em' }}>
+      Live Gemini call · {Math.round(m.answered - m.thinking)} s wait shortened
+    </div>
+  )
+}
+
 /** Still screenshots with a keyframed camera: keys [{f, still, box (or null for the whole page), margin}]. */
 const capped = (view, max = 2.3) => (view.s <= max ? view : { s: max, x: 960 - (960 - view.x) / view.s * max, y: 540 - (540 - view.y) / view.s * max })
 function Stills({ shot, keys }) {
@@ -225,6 +259,10 @@ function Shot({ shot }) {
     const m = DATA.s4_2.marks
     return <Screencast shot="s4_2" segments={s42Segments()} camera={camera42}
       stills={shot.stills.map((w) => ({ from: m[w.from], to: m[w.to], file: w.file }))} />
+  }
+  if (shot.id === 'gem') {
+    return <Screencast shot="gem" segments={gemSegments()} camera={cameraGem}
+      stills={[{ from: DATA.gem.marks.answer_still, to: DATA.gem.marks.end + 1, file: 'hold_answer.png' }]}><GemLabel /></Screencast>
   }
   if (shot.id === 's1_1') return <Screencast shot="s1_1" segments={s11Segments()} />
   if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} />

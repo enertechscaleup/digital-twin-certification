@@ -5,13 +5,14 @@ import { SECTION2_FRAMES } from './library.js'
 import { Section3, SECTION3_FRAMES, SECTION3_SHOTS } from './Section3.jsx'
 import { Section4 } from './Section4.jsx'
 import { CUES } from './narration.js'
+import { VISION_END } from './vision.js'
 import DURATIONS from './vo.json'
 
-// The full demo video (script v3): four sections back to back, with the narration placed on
+// The full demo video (script v4): four sections back to back, with the narration placed on
 // top. Section lengths follow the recorded narration, to stay under the 3-minute cap.
 const FPS = 30
-const S1_FRAMES = 24 * FPS
-const S4_FRAMES = 756 // the closing line holds about 1.5 s, then everything fades
+const S1_FRAMES = VISION_END
+const S4_FRAMES = 360 // the closing line holds about 4 s, then everything fades
 export const SECTIONS = [
   { n: 1, at: 0, len: S1_FRAMES },
   { n: 2, at: S1_FRAMES, len: SECTION2_FRAMES },
@@ -40,7 +41,8 @@ const XF = 2.5
 const B1 = SECTIONS[2].at / FPS - 0.5 // the clean bed cross-fades in under the Section 3 title
 const BED = [
   { id: 'a1', at: 0 }, { id: 'a2', at: CLIP - XF },
-  { id: 'b1', at: B1 }, { id: 'b2', at: B1 + CLIP - XF }, { id: 'b3', at: B1 + 2 * (CLIP - XF) }, { id: 'b4', at: B1 + 3 * (CLIP - XF) },
+  { id: 'b1', at: B1 }, { id: 'b2', at: B1 + CLIP - XF }, { id: 'b3', at: B1 + 2 * (CLIP - XF) }, // The resolving clip ends with the video (v4's Section 3 starts earlier).
+  { id: 'b4', at: Math.min(B1 + 3 * (CLIP - XF), FULL_FRAMES / FPS - CLIP) },
 ]
 const OPEN = 0.75 // bed level with no narration
 const UNDER = 0.13 // bed level under narration (about -15 dB)
