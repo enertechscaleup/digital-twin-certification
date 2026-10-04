@@ -5,19 +5,19 @@
     {
       "run": "assurance-demo_full_cycle-seed42",
       "title": "Full assurance cycle",
-      "core_ledger_head_hash": "ea1d69c18dc76fc4bb1be41e01dbe858ccda452a14a57ed1c22756983b41a3be",
+      "core_ledger_head_hash": "f8a4f238a88a7161ae71eacb85e36f436a42f8797db9ec04cd63e31caee3e27e",
       "project_id": "oil-gas-compressor-train"
     },
     {
       "run": "assurance-demo_wear_to_nullified-seed42",
       "title": "Wear to nullified",
-      "core_ledger_head_hash": "defe7016d515215eab48fe57ed1ff2d1a1fabcfe02994848e38039d1fe57385a",
+      "core_ledger_head_hash": "8568b4a5491bbb2fcfd53cd7d1ae86aee7c8211986f053f211de5e14fc869708",
       "project_id": "oil-gas-compressor-train"
     },
     {
       "run": "assurance-faults_showcase-seed42",
       "title": "Fault types showcase",
-      "core_ledger_head_hash": "cb7081338a887f498178265af8e085997912617460c7c4ebde6c94d488053c62",
+      "core_ledger_head_hash": "f48b3e89b3ead0dc40dfd9be48d1d0ae9dc23de228a6089b4a88466c7feac028",
       "project_id": "oil-gas-compressor-train"
     }
   ]
