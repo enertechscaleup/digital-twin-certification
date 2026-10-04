@@ -9,6 +9,20 @@ import { CAUSES, anomalyKind, anomalyLabel, citedVersion, short, summarize, vers
 import { unitLabel } from './api.js'
 import { fmt } from './format.js'
 
+// TwinEvidence's seal: the mark of evidence captured and recorded (the same mark the demo
+// video puts on the governance layer and the evidence store).
+const SEAL_RING = Array.from({ length: 16 }, (_, i) => {
+  const a = (i / 16) * Math.PI * 2
+  const r = i % 2 ? 10.2 : 11.6
+  return `${12 + r * Math.cos(a)},${12 + r * Math.sin(a)}`
+}).join(' ')
+export const Seal = ({ size = 16 }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden style={{ flex: 'none' }}>
+    <polygon points={SEAL_RING} fill="none" stroke="var(--orange)" strokeWidth="1.8" strokeLinejoin="round" />
+    <path d="M7.4 12.3 L10.6 15.4 L16.8 8.9" fill="none" stroke="var(--orange)" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+)
+
 const Mark = ({ ok, warn }) => (
   <span className={`step-mark ${warn ? 'warn' : ok ? 'done' : 'fail'}`}>{warn ? '•' : ok ? <Check size={11} /> : <X size={11} />}</span>
 )
@@ -164,7 +178,7 @@ export function Ledger({ entries, head, total, who }) {
   const shown = [...entries].reverse().slice(0, 30)
   return (
     <div className="panel">
-      <div className="panel-head"><h2 className="label">Evidence ledger</h2><span className="small muted">{total} entries · head <code>{short(head, 12)}</code></span></div>
+      <div className="panel-head"><h2 className="label" style={{ display: 'flex', gap: 6, alignItems: 'center' }}><Seal size={15} /> Evidence ledger</h2><span className="small muted">{total} entries · head <code>{short(head, 12)}</code></span></div>
       <p className="hint" style={{ padding: '10px 18px 0' }}>Each entry is sealed with SHA-256 and linked to the one before. Select one to see its payload.</p>
       <ul className="rule-list panel-pad scroll-list" style={{ paddingBlock: 4 }}>
         {shown.map((e) => (

@@ -54,7 +54,7 @@ function ProjectCard({ project }) {
       <div className="small muted" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         {project.preview
           ? <span className="chip"><FlaskConical size={12} /> Preview · mock data</span>
-          : !pending && <span className="chip"><ShieldCheck size={12} /> Verified evidence · {project.runs.length} runs</span>}
+          : !pending && <span className="chip"><ShieldCheck size={12} /> Verified evidence · {project.runs.length} {project.runs.length === 1 ? 'run' : 'runs'}</span>}
         {pending ? 'Awaiting twin registration and telemetry'
           : l ? `Latest run: ${l.run.name} · ${l.ticks} ticks · system ${l.system}` : ''}
       </div>

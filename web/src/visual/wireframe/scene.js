@@ -13,7 +13,8 @@ import { applyDraw, lineParts } from './renderer.js'
 //                  graph: { offset: [dx, dy, dz], nodes, seed, appear: [f0, f1] },
 //                  focus: [[f, brightness], ...] }],          // optional: dim/highlight over time
 //   links:      [{ from, to, appear: [f0, f1], hide: [f0, f1] }],   // hide is optional
-//   governance: [{ members: [ids], appear: [f0, f1], hide: [f0, f1], height, z }],  // optional
+//   governance: [{ members: [ids], appear: [f0, f1], hide: [f0, f1], height, z, terminus }],  // optional
+//     terminus: an x past the last member where the rail ends and its pulses land (an evidence store)
 //   camera:     [{ f, pos: [x, y, z], look: [x, y, z] }],
 //   flow:       { speed },         // data pulses per frame along each curve (0..1 of its length)
 //   grid:       { size },          // optional, default 40
@@ -198,7 +199,9 @@ export function buildScene(spec, colors) {
     const railY = g.height ?? Math.max(...tops.map((p) => p.y)) + (g.lift ?? 1.4)
     const railZ = g.z ?? Math.min(...tops.map((p) => p.z)) - 0.8
     const railPts = tops.map((p) => new THREE.Vector3(p.x, railY, railZ))
-    const railCurve = new THREE.LineCurve3(railPts[0], railPts[railPts.length - 1])
+    const railEnd = g.terminus != null && g.terminus > railPts[railPts.length - 1].x
+      ? new THREE.Vector3(g.terminus, railY, railZ) : railPts[railPts.length - 1]
+    const railCurve = new THREE.LineCurve3(railPts[0], railEnd)
     const group = new THREE.Group()
     for (const dy of [0, 0.32]) {
       const rail = new THREE.Line(new THREE.BufferGeometry().setFromPoints(railCurve.getPoints(80).map((p) => p.clone().setY(p.y + dy))), mat)

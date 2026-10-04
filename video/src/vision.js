@@ -1,9 +1,12 @@
-// Section 1 (0:00–0:30): an invented energy-and-compute system assembling itself.
+// Section 1 (0:00–0:24): an invented energy-and-compute system assembling itself.
 // Geothermal plant → battery array → substation → data center. Not a real project and
-// not platform data: generic shapes, no statuses. The final frame (850–900) is reused
-// by Section 4.
+// not platform data: generic shapes, no statuses. The closing frame (VISION_END) is reused
+// by Sections 2 and 4. Timings are written on the original 30 s plan and scaled to the
+// 24 s section the v3 narration fits in (same choreography, same order).
 
-const S = 30 // frames per second
+const K = 24 / 30
+const S = 30 * K // frames per (original) second
+export const VISION_END = 24 * 30
 
 export const VISION = {
   objects: [

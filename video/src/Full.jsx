@@ -1,19 +1,22 @@
 import { AbsoluteFill, Audio, Sequence, staticFile } from 'remotion'
 import { Section1 } from './Section1.jsx'
 import { Section2 } from './Section2.jsx'
+import { SECTION2_FRAMES } from './library.js'
 import { Section3, SECTION3_FRAMES, SECTION3_SHOTS } from './Section3.jsx'
 import { Section4 } from './Section4.jsx'
 import { CUES } from './narration.js'
 import DURATIONS from './vo.json'
 
-// The full demo video: four sections back to back, with the narration placed on top.
+// The full demo video (script v3): four sections back to back, with the narration placed on
+// top. Section lengths follow the recorded narration, to stay under the 3-minute cap.
 const FPS = 30
-const S4_FRAMES = 26 * FPS // Section 4 trimmed from 30 s (closing hold) for a 2:55 cut
+const S1_FRAMES = 24 * FPS
+const S4_FRAMES = 756 // the closing line holds about 1.5 s, then everything fades
 export const SECTIONS = [
-  { n: 1, at: 0, len: 30 * FPS },
-  { n: 2, at: 30 * FPS, len: 30 * FPS },
-  { n: 3, at: 60 * FPS, len: SECTION3_FRAMES },
-  { n: 4, at: 60 * FPS + SECTION3_FRAMES, len: S4_FRAMES },
+  { n: 1, at: 0, len: S1_FRAMES },
+  { n: 2, at: S1_FRAMES, len: SECTION2_FRAMES },
+  { n: 3, at: S1_FRAMES + SECTION2_FRAMES, len: SECTION3_FRAMES },
+  { n: 4, at: S1_FRAMES + SECTION2_FRAMES + SECTION3_FRAMES, len: S4_FRAMES },
 ]
 export const FULL_FRAMES = SECTIONS.reduce((n, s) => n + s.len, 0)
 
@@ -33,12 +36,13 @@ export function placeCues() {
 // Music bed (Lyria, capture/music.mjs): cinematic under Sections 1–2, clean and confident from
 // Section 3. Clips overlap by 3 s and cross-fade; the bed ducks under every narration line.
 const CLIP = 32.7
-const XF = 3
+const XF = 2.5
+const B1 = SECTIONS[2].at / FPS - 0.5 // the clean bed cross-fades in under the Section 3 title
 const BED = [
   { id: 'a1', at: 0 }, { id: 'a2', at: CLIP - XF },
-  { id: 'b1', at: 59.5 }, { id: 'b2', at: 59.5 + CLIP - XF }, { id: 'b3', at: 59.5 + 2 * (CLIP - XF) }, { id: 'b4', at: 59.5 + 3 * (CLIP - XF) },
+  { id: 'b1', at: B1 }, { id: 'b2', at: B1 + CLIP - XF }, { id: 'b3', at: B1 + 2 * (CLIP - XF) }, { id: 'b4', at: B1 + 3 * (CLIP - XF) },
 ]
-const OPEN = 0.75 // bed level with no narration (Section 1)
+const OPEN = 0.75 // bed level with no narration
 const UNDER = 0.13 // bed level under narration (about -15 dB)
 const RAMP = 0.5 // seconds
 
@@ -69,7 +73,7 @@ function MusicBed({ cues }) {
       <Sequence key={c.id} from={Math.round(c.at * FPS)} durationInFrames={Math.round((end - c.at) * FPS)}>
         <Audio src={staticFile(`music/${c.id}.wav`)} volume={(f) => {
           const t = c.at + f / FPS
-          return clipGain(t, c.at, i === 1 ? 59.5 + XF : end, total) * bedGain(t, cues)
+          return clipGain(t, c.at, i === 1 ? B1 + XF : end, total) * bedGain(t, cues)
         }} />
       </Sequence>
     )

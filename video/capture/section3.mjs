@@ -1,14 +1,17 @@
-// Records Section 3 from the real platform (served locally, reading the locked evidence
-// bucket). Ticked shots are one double-resolution screenshot per tick; interaction shots
-// are a Chrome screencast (JPEG frames with timestamps) with a visible pointer.
-// Usage: node capture/section3.mjs [shot ...]     Output: public/s3/<shot>/
+// Records Section 3 from the real platform, served locally. Ticked shots are one
+// double-resolution screenshot per tick; still shots are double-resolution screenshots with
+// the boxes the camera frames; interaction shots are a Chrome screencast (JPEG frames with
+// timestamps) with a visible pointer.
+// Draft cut (v3 script): served from the local lineage run (launch config platform-lineage-dev,
+// port 8200). The final cut is re-recorded from the regenerated evidence in the bucket.
+// Usage: PLATFORM_URL=... RUN=... node capture/section3.mjs [shot ...]     Output: public/s3/<shot>/
 
 import { chromium } from 'playwright'
 import { mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 
-const BASE = process.env.PLATFORM_URL || 'http://localhost:8100'
-const RUN = 'assurance-demo_full_cycle-seed42'
+const BASE = process.env.PLATFORM_URL || 'http://localhost:8200'
+const RUN = process.env.RUN || 'lineage-dev-demo_full_cycle-seed42'
 const OUT = path.resolve('public/s3')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -45,7 +48,7 @@ async function click(page, loc, ms = 900) {
   await page.mouse.down(); await sleep(90); await page.mouse.up()
 }
 
-async function screencast(context, page, shot, run, scale = 1) {
+async function screencast(context, page, shot, run, scale = 1, extra = {}) {
   const dir = path.join(OUT, shot)
   await rm(dir, { recursive: true, force: true })
   await mkdir(dir, { recursive: true })
@@ -66,7 +69,7 @@ async function screencast(context, page, shot, run, scale = 1) {
   await cdp.send('Page.stopScreencast')
   await sleep(200)
   const duration = (Date.now() - started) / 1000
-  await writeFile(path.join(dir, 'frames.json'), JSON.stringify({ duration, frames }, null, 1))
+  await writeFile(path.join(dir, 'frames.json'), JSON.stringify({ duration, frames, ...extra }, null, 1))
   console.log(`${shot}: ${frames.length} frames over ${duration.toFixed(1)} s`)
 }
 
@@ -76,7 +79,7 @@ async function waitTick(page, n) {
   await sleep(350)
 }
 
-async function ticked(browser, shot, { url, from, to, tab, focus, scrollTo }) {
+async function ticked(browser, shot, { url, from, to, tab, focus, scrollTo, boxesAt }) {
   const dir = path.join(OUT, shot)
   await rm(dir, { recursive: true, force: true })
   await mkdir(dir, { recursive: true })
@@ -94,14 +97,15 @@ async function ticked(browser, shot, { url, from, to, tab, focus, scrollTo }) {
     const file = `t${String(t).padStart(3, '0')}.png`
     await page.screenshot({ path: path.join(dir, file) })
     shots.push({ tick: t, file })
-    if (t === from) for (const [k, sel] of Object.entries(focus || {})) boxes[k] = await page.locator(sel.css, { hasText: sel.text }).first().boundingBox()
+    if (t === (boxesAt ?? from)) for (const [k, sel] of Object.entries(focus || {})) boxes[k] = await page.locator(sel.css, { hasText: sel.text }).first().boundingBox()
   }
   await writeFile(path.join(dir, 'shots.json'), JSON.stringify({ shots, boxes, viewport: [1920, 1080] }, null, 1))
   console.log(`${shot}: ticks ${from}–${to}`)
   await context.close()
 }
 
-// ``scale`` 2 records at double resolution, for shots the video zooms into.
+// ``scale`` 2 records at double resolution, for shots the video zooms into. ``act`` may record
+// ``marks`` (seconds since the screencast started) and element ``boxes`` for the camera.
 async function interaction(browser, shot, prepare, act, scale = 1) {
   const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: scale })
   await context.addInitScript(POINTER)
@@ -110,22 +114,70 @@ async function interaction(browser, shot, prepare, act, scale = 1) {
   await prepare(page)
   await page.mouse.move(mouse.x, mouse.y)
   await sleep(300)
-  await screencast(context, page, shot, () => act(page), scale)
+  const extra = { marks: {}, boxes: {} }
+  let started
+  await screencast(context, page, shot, () => { started = Date.now(); return act(page, (k) => { extra.marks[k] = (Date.now() - started) / 1000 }, extra.boxes) }, scale, extra)
   await context.close()
 }
 
+/** Double-resolution screenshots, each with the boxes (CSS px) the video's camera frames. */
+async function stills(browser, shot, steps) {
+  const dir = path.join(OUT, shot)
+  await rm(dir, { recursive: true, force: true })
+  await mkdir(dir, { recursive: true })
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 2 })
+  const page = await context.newPage()
+  const out = []
+  for (const [i, step] of steps.entries()) {
+    await step.prepare(page)
+    await sleep(500)
+    const boxes = {}
+    for (const [k, loc] of Object.entries(step.boxes(page))) boxes[k] = await loc.boundingBox()
+    const file = `still${i}.png`
+    await page.screenshot({ path: path.join(dir, file) })
+    out.push({ file, boxes })
+  }
+  await writeFile(path.join(dir, 'stills.json'), JSON.stringify({ stills: out, viewport: [1920, 1080] }, null, 1))
+  console.log(`${shot}: ${out.length} stills`)
+  await context.close()
+}
+
+const panel = (p, title) => p.locator('.panel', { hasText: title }).first()
+const toTop = (loc, offset = 120) => loc.evaluate((el, o) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - o), offset)
+
 const SHOTS = {
+  // The twin library (Find & connect): the registered twins, each with its permanent identity.
+  'lib': (b) => stills(b, 'lib', [{
+    prepare: async (p) => {
+      await p.goto(`${BASE}/#new`)
+      await p.getByText('Find & connect').first().click()
+      await p.getByRole('button', { name: 'Oil & gas' }).click()
+      await p.waitForFunction(() => document.querySelectorAll('.registry-card').length === 2)
+      await toTop(p.locator('.registry-card').first(), 90)
+      await p.locator('.registry-card').first().hover()
+      await sleep(900)
+    },
+    boxes: (p) => ({
+      cards: p.locator('.registry-grid, .registry-card').first(),
+      motor: p.locator('.registry-card').nth(0), compressor: p.locator('.registry-card').nth(1),
+      id0: p.locator('.registry-card').nth(0).getByText(/^Identity/), id1: p.locator('.registry-card').nth(1).getByText(/^Identity/),
+    }),
+  }]),
+
   // 1.1 Projects: both projects, hover each, open the compressor train.
   's1_1': (b) => interaction(b, 's1_1', async (p) => {
     await p.goto(`${BASE}/#projects`)
-    await p.getByText('Verified evidence · 3 runs').waitFor()
+    await p.getByText(/Verified evidence ·/).waitFor()
     await p.waitForFunction(() => document.querySelectorAll('.project-card .pill').length >= 2)
     await sleep(800)
-  }, async (p) => {
+  }, async (p, mark) => {
     await sleep(2200)
     const cards = p.locator('.project-card')
-    await glide(p, ...(await centre(cards.nth(0))), 1200); await sleep(3000)
-    await glide(p, ...(await centre(cards.nth(1))), 1200); await sleep(3000)
+    mark('to_first')
+    await glide(p, ...(await centre(cards.nth(0))), 1200); mark('on_first'); await sleep(3000)
+    mark('to_second')
+    await glide(p, ...(await centre(cards.nth(1))), 1200); mark('on_second'); await sleep(3000)
+    mark('to_open')
     await click(p, cards.nth(0).locator('.text-link'), 1100)
     await p.getByText('Evidence verified').waitFor(); await sleep(1400)
   }),
@@ -178,22 +230,52 @@ const SHOTS = {
     await click(p, motor, 300); await sleep(3200)
   }),
 
-  // 4.2 Evidence: hash-chained ledger entry, then re-verify from the bucket.
+  // Recalibration registers a new, linked version: the lineage panel across ticks 58–61.
+  'lin': (b) => ticked(b, 'lin', {
+    url: `/?run=${RUN}&tick=58&stage=system#oil-gas-compressor-train`, from: 58, to: 61, scrollTo: '.panel:has(.lineage)', boxesAt: 61,
+    focus: { lineage: { css: '.panel', text: 'Twin lineage' }, motor: { css: '.panel:has(.lineage) .rule-list > li', text: 'twn_' } },
+  }),
+
+  // The joint composition test: build (pass) and after recalibration (interface fails), then
+  // the system twin with its named reason.
+  'joint': (b) => stills(b, 'joint', [{
+    prepare: async (p) => {
+      await p.goto(`${BASE}/?run=${RUN}&tick=62&stage=system#oil-gas-compressor-train`)
+      await waitTick(p, 62)
+      await toTop(panel(p, 'Composition · joint runs'), 60)
+    },
+    boxes: (p) => ({ panel: panel(p, 'Composition · joint runs'), build: p.locator('article.joint').nth(0), after: p.locator('article.joint').nth(1),
+                     interface: p.locator('article.joint').nth(1).locator('li').first() }),
+  }, {
+    prepare: async (p) => { await toTop(p.locator('#status-h'), 150) },
+    boxes: (p) => ({ row: p.locator('.status-row'), system: p.locator('.twin-card.is-system') }),
+  }]),
+
+  // 4.2 Evidence: hash-chained ledger entry, then re-verify from the evidence store.
   's4_2': (b) => interaction(b, 's4_2', async (p) => {
     await p.goto(`${BASE}/?run=${RUN}&tick=79&stage=system#oil-gas-compressor-train`)
     await waitTick(p, 79)
-    await p.getByText('Evidence ledger').first().evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 150))
+    await toTop(panel(p, 'Evidence ledger'), 150)
     await sleep(600)
-  }, async (p) => {
+  }, async (p, mark, boxes) => {
     await sleep(1000)
+    mark('click_ledger')
     await click(p, p.locator('.ledger-row', { hasText: 'Post-state check' }).first(), 1000)
     // Sharp stills of the two moments the video zooms into (the screen is still meanwhile).
-    await sleep(700); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_ledger.png') }); await sleep(1500)
+    await sleep(700); mark('ledger_still'); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_ledger.png') })
+    boxes.ledger = await panel(p, 'Evidence ledger').boundingBox()
+    await sleep(1500)
+    mark('scroll')
     await p.evaluate(() => { const el = [...document.querySelectorAll('.panel')].find((x) => x.textContent.includes('Evidence integrity')); window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - 200, behavior: 'smooth' }) })
     await sleep(1400)
+    mark('click_verify')
     await click(p, p.getByRole('button', { name: /Re-verify now/ }), 900)
     await p.getByText(/just now in/).waitFor({ timeout: 60000 })
-    await sleep(400); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_integrity.png') }); await sleep(1700)
+    mark('verified')
+    await sleep(400); mark('integrity_still'); await p.screenshot({ path: path.join(OUT, 's4_2', 'hold_integrity.png') })
+    boxes.integrity = await panel(p, 'Evidence integrity').boundingBox()
+    await sleep(2400)
+    mark('end')
   }, 2),
 }
 
