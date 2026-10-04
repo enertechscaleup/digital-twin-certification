@@ -167,8 +167,8 @@ class TestFieldMonitoring(unittest.TestCase):
     def test_acknowledgement_recorded(self):
         result = run(scenario("faults_showcase"))
         anomaly = result.ledger.of_type("anomaly_opened")[0]["payload"]["anomaly_id"]
-        entry = result.monitor.acknowledge(anomaly, "waqar", "sensor inspected", "2026-10-01T00:02:00Z")
-        self.assertEqual(entry["payload"]["acknowledged_by"], "waqar")
+        entry = result.monitor.acknowledge(anomaly, "operator (demo)", "sensor inspected", "2026-10-01T00:02:00Z")
+        self.assertEqual(entry["payload"]["acknowledged_by"], "operator (demo)")
         self.assertTrue(verify_chain(result.ledger.entries).valid)
 
 
