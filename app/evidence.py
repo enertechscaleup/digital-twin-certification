@@ -175,7 +175,7 @@ def write_manifest(directory: Path, run: str, scenario: str, code_commit: str | 
         "run": run, "scenario": scenario, "start_time": core[0]["timestamp"],
         "core_ledger_head_hash": core[-1]["entry_hash"], "core_ledger_entries": len(core),
         "supplementary_ledger_head_hash": sup[-1]["entry_hash"], "supplementary_entries": len(sup),
-        "ai_model": sup[1]["payload"]["model_id"] if len(sup) > 1 else None,
+        "ai_model": next((e["payload"]["model_id"] for e in sup[1:] if e["entry_type"] == "ai_artifact"), None),
         "code_commit": code_commit, "file_sha256": files,
     }
     (directory / f"{run}.manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

@@ -8,6 +8,7 @@ Answers are conversational and are not recorded in any ledger.
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 
@@ -57,16 +58,23 @@ class GeminiChat:
         self.model_id = model_id
         self.types = genai.types
         self._client = genai.Client(vertexai=True, project=os.environ.get("GOOGLE_CLOUD_PROJECT"), location=location)
-        t = self.types
-        self._config = t.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            temperature=0.0,
-            max_output_tokens=MAX_OUTPUT_TOKENS,
-            tools=[t.Tool(function_declarations=[
-                t.FunctionDeclaration(name=s["name"], description=s["description"],
-                                      parameters_json_schema=s["parameters"]) for s in TOOL_SCHEMAS])],
-            automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
-        )
+        self._configs: dict[str, object] = {}
+        self._config = self._config_for(TOOL_SCHEMAS)
+
+    def _config_for(self, schemas: list[dict]):
+        key = json.dumps(schemas, sort_keys=True)
+        if key not in self._configs:
+            t = self.types
+            self._configs[key] = t.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                temperature=0.0,
+                max_output_tokens=MAX_OUTPUT_TOKENS,
+                tools=[t.Tool(function_declarations=[
+                    t.FunctionDeclaration(name=s["name"], description=s["description"],
+                                          parameters_json_schema=s["parameters"]) for s in schemas])],
+                automatic_function_calling=t.AutomaticFunctionCallingConfig(disable=True),
+            )
+        return self._configs[key]
 
     def user(self, text: str):
         return self.types.Content(role="user", parts=[self.types.Part.from_text(text=text)])
@@ -78,9 +86,11 @@ class GeminiChat:
         return self.types.Content(role="user", parts=[
             self.types.Part.from_function_response(name=n, response=r) for n, r in results])
 
-    def generate(self, contents: list):
-        """Returns (model_content, function_calls [(name, args)], text)."""
-        resp = self._client.models.generate_content(model=self.model_id, contents=contents, config=self._config)
+    def generate(self, contents: list, tools: list[dict] | None = None):
+        """Returns (model_content, function_calls [(name, args)], text). ``tools``: the project's
+        read-only tool schemas (the same tools, with that project's twin ids as examples)."""
+        config = self._config_for(tools) if tools else self._config
+        resp = self._client.models.generate_content(model=self.model_id, contents=contents, config=config)
         candidate = resp.candidates[0] if resp.candidates else None
         content = candidate.content if candidate else None
         calls = [(c.name, dict(c.args or {})) for c in (resp.function_calls or [])]
@@ -98,8 +108,9 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
     contents.append(chat.user(f"[The viewer is at tick {toolbox.tick}.]\n{question}"))
 
     used: list[dict] = []
+    takes_tools = "tools" in inspect.signature(chat.generate).parameters
     for _ in range(MAX_TOOL_ROUNDS):
-        content, calls, text = chat.generate(contents)
+        content, calls, text = chat.generate(contents, tools=toolbox.schemas()) if takes_tools else chat.generate(contents)
         if not calls:
             if not text:
                 raise AssistantError("the model returned no answer")

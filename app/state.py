@@ -20,6 +20,8 @@ def core_upto(ev: RunEvidence, tick: int) -> list[dict]:
 def explanations_upto(ev: RunEvidence, tick: int) -> list[dict]:
     out = []
     for e in ev.supplementary[1:]:
+        if e["entry_type"] != "ai_artifact":
+            continue
         explained = ev.core[e["payload"]["explains_ledger_seq"]]
         if ev.tick_of(explained) <= tick:
             out.append({**e, "explains_tick": ev.tick_of(explained)})

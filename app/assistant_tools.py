@@ -41,6 +41,9 @@ class Toolbox:
         ids = [x for x in (p.get("twin_id"), p.get("system_twin_id")) if x]
         return not ids or any(self._visible(i) for i in ids)
 
+    def schemas(self) -> list[dict]:
+        return tool_schemas(self.project)
+
     # -- tools -----------------------------------------------------------
 
     def get_current_tick(self) -> dict:
@@ -221,3 +224,20 @@ TOOL_SCHEMAS = [
      "parameters": {"type": "object", "properties": {}}},
 ]
 TOOL_NAMES = {t["name"] for t in TOOL_SCHEMAS}
+
+
+def tool_schemas(project: Project) -> list[dict]:
+    """The same read-only tools, with the twin ids of this project as the examples."""
+    reg = load_registry(project)
+    ids = [p.operational_twin_id for p in reg.products.values()] + [reg.system.operational_system_twin_id]
+    twin_id = {"type": "string", "description": "Operational twin id, one of: " + ", ".join(ids)}
+
+    def swap(x):
+        if x == TWIN_ID:
+            return dict(twin_id)
+        if isinstance(x, dict):
+            return {k: swap(v) for k, v in x.items()}
+        if isinstance(x, list):
+            return [swap(v) for v in x]
+        return x
+    return swap(TOOL_SCHEMAS)

@@ -40,6 +40,18 @@ def record(ledger: EvidenceLedger, artifact: dict) -> dict:
     return ledger.append("ai_artifact", _now(), artifact)
 
 
+UNAVAILABLE = "explanations_unavailable"
+
+
+def record_unavailable(ledger: EvidenceLedger, reason: str, artifacts_sealed: int) -> dict:
+    """Gemini could not be reached: the run carries no (or no further) explanations. The core
+    evidence and its verification are unaffected."""
+    return ledger.append(UNAVAILABLE, _now(), {
+        "reason": reason, "artifacts_sealed_before": artifacts_sealed,
+        "notice": "No explanations: the AI service was unavailable. Assurance decisions do not depend on it.",
+    })
+
+
 @dataclass(frozen=True)
 class AnchorCheck:
     valid: bool
@@ -56,8 +68,16 @@ def verify(supplementary: list[dict], core: list[dict]) -> AnchorCheck:
             header["payload"]["core_head_hash"] != core[-1]["entry_hash"]:
         return AnchorCheck(False, "supplementary ledger is not bound to this core ledger")
     for e in supplementary[1:]:
+        if e["entry_type"] == UNAVAILABLE:
+            continue
+        if e["entry_type"] != "ai_artifact":
+            return AnchorCheck(False, f"supplementary entry {e['seq']} has an unknown type {e['entry_type']!r}")
         p = e["payload"]
         seq = p["explains_ledger_seq"]
         if seq >= len(core) or core[seq]["entry_hash"] != p["explains_entry_hash"]:
             return AnchorCheck(False, f"supplementary entry {e['seq']} points at a core entry that does not match")
+        for c in p.get("cites", []):
+            n = c["ledger_seq"]
+            if n >= len(core) or core[n]["entry_hash"] != c["entry_hash"]:
+                return AnchorCheck(False, f"supplementary entry {e['seq']} cites core entry {n}, which does not match")
     return AnchorCheck(True)
