@@ -16,7 +16,7 @@ import os
 from app.assistant_tools import TOOL_SCHEMAS, Toolbox, ToolError
 from explain.gemini import PINNED_LOCATION, PINNED_MODEL
 
-MAX_TOOL_ROUNDS = 6
+MAX_TOOL_ROUNDS = 8
 log = logging.getLogger("twinevidence.assistant")
 # Includes the model's thinking, which can use several hundred tokens before the answer.
 MAX_OUTPUT_TOKENS = 4000

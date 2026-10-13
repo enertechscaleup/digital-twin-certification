@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 import app.main as main
-from app.assistant import AssistantError, ask
+from app.assistant import MAX_TOOL_ROUNDS, AssistantError, ask
 from app.assistant_tools import Toolbox, ToolError
 from projects import load_project
 from app.evidence import verify_run, LocalStore
@@ -117,6 +117,18 @@ class TestAssistant(unittest.TestCase):
         chat = Chat([[("get_current_tick", {})]] * 10)
         with self.assertRaises(AssistantError):
             ask(chat, Toolbox(self.ev, 5, False), "loop", [])
+
+    def test_tool_round_cap_is_eight(self):
+        self.assertEqual(MAX_TOOL_ROUNDS, 8)
+        # 7 rounds of lookups, then an answer on the 8th model call: answered.
+        chat = Chat([[("get_current_tick", {})]] * 7 + ["Done."])
+        out = ask(chat, Toolbox(self.ev, 5, False), "deep question", [])
+        self.assertEqual((out["answer"], out["model_calls"], out["tool_rounds"]), ("Done.", 8, 7))
+        # Still asking for lookups on the 8th call: stopped there, with the readable reply.
+        chat = Chat([[("get_current_tick", {})]] * 8 + ["never reached"])
+        with self.assertRaisesRegex(AssistantError, "too many evidence lookups; try a narrower question"):
+            ask(chat, Toolbox(self.ev, 5, False), "deeper question", [])
+        self.assertEqual(chat.script, ["never reached"])
 
     # -- endpoint ---------------------------------------------------------
 

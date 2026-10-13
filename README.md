@@ -258,7 +258,7 @@ an earlier view.
 - questions up to 800 characters;
 - 6 per minute and 60 per day per visitor;
 - 300 per hour per instance;
-- at most 6 tool rounds per question;
+- at most 8 tool rounds per question;
 - capped answer length.
 
 ### Dashboard (`web/`, React + Vite)

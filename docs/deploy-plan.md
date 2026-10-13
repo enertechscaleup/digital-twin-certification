@@ -56,7 +56,7 @@ Cloud Run source bucket (`run-sources-…`), not to the evidence bucket.
 ## Before deploying
 
 1. The working tree is clean, on `fulfilment-cell`. Record `git rev-parse HEAD`.
-2. `python -m unittest discover -s tests` passes (currently 208 tests).
+2. `python -m unittest discover -s tests` passes (currently 209 tests).
 3. The six head checks pass: each run re-runs to its pinned head and verifies
    11/11 from local files.
 
@@ -135,7 +135,7 @@ Run against `https://cell---digital-twin-certification-eqxy2ooxuq-uc.a.run.app`:
    projects.
 5. **One assistant question per project.** The cell question must cite ledger
    entries. A request to change a status must be refused. Record seconds,
-   model calls and tool rounds.
+   model calls and tool rounds (cap: 8 rounds).
 6. **No console errors** in the browser.
 7. **Cold-start time:** the first request to an idle revision, with time to
    first byte measured.
