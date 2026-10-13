@@ -12,12 +12,35 @@ import inspect
 import json
 import logging
 import os
+import time
 
 from app.assistant_tools import TOOL_SCHEMAS, Toolbox, ToolError
 from explain.gemini import PINNED_LOCATION, PINNED_MODEL
 
 MAX_TOOL_ROUNDS = 8
 log = logging.getLogger("twinevidence.assistant")
+_PROCESS_STARTED = time.monotonic()
+_first_model_call = True  # the first model call made by this process, i.e. on this instance
+
+
+def instance_age() -> float:
+    return time.monotonic() - _PROCESS_STARTED
+
+
+def _log_model_call(chat, index: int, error: str | None = None) -> None:
+    """One line per model call: timing, HTTP attempts, token time, error class. Never the
+    question or the answer."""
+    global _first_model_call
+    first, _first_model_call = _first_model_call, False
+    c = getattr(chat, "last_call", None) or {}
+    fmt = lambda v, f: "n/a" if v is None else f % v
+    attempts = c.get("attempts")
+    log.info("assistant model call %d: %s s, http attempts %s, sdk retried %s, token %s s, error %s, "
+             "first call on instance %s, instance age %.1f s",
+             index, fmt(c.get("seconds"), "%.3f"), fmt(attempts, "%d"),
+             "n/a" if attempts is None else ("yes" if attempts > 1 else "no"),
+             fmt(c.get("token_seconds"), "%.3f"), error or c.get("error") or "none",
+             "yes" if first else "no", instance_age())
 # Includes the model's thinking, which can use several hundred tokens before the answer.
 MAX_OUTPUT_TOKENS = 4000
 NOTICE = "AI assistant. Answers come only from the evidence up to the tick on screen and are never used in any assurance decision."
@@ -57,11 +80,39 @@ class GeminiChat:
     def __init__(self, model_id: str = PINNED_MODEL, location: str = PINNED_LOCATION):
         from google import genai
 
+        started = time.monotonic()
         self.model_id = model_id
         self.types = genai.types
         self._client = genai.Client(vertexai=True, project=os.environ.get("GOOGLE_CLOUD_PROJECT"), location=location)
         self._configs: dict[str, object] = {}
         self._config = self._config_for(TOOL_SCHEMAS)
+        self.last_call: dict = {}
+        self._attempts = 0
+        self._token_seconds = 0.0
+        self._instrument()
+        log.info("assistant client created in %.3f s (instance age %.1f s)", time.monotonic() - started, instance_age())
+
+    def _instrument(self) -> None:
+        """Counts HTTP attempts per model call (the SDK retries inside its own request path, if
+        retries are configured) and times the access-token step. Diagnostics only; if the SDK's
+        internals differ, the counts are reported as not available."""
+        api = getattr(self._client, "_api_client", None)
+        once, token = getattr(api, "_request_once", None), getattr(api, "_access_token", None)
+        if not (callable(once) and callable(token)):
+            self._attempts = self._token_seconds = None
+            return
+
+        def counted_once(*args, **kwargs):
+            self._attempts += 1
+            return once(*args, **kwargs)
+
+        def timed_token(*args, **kwargs):
+            t0 = time.monotonic()
+            try:
+                return token(*args, **kwargs)
+            finally:
+                self._token_seconds += time.monotonic() - t0
+        api._request_once, api._access_token = counted_once, timed_token
 
     def _config_for(self, schemas: list[dict]):
         key = json.dumps(schemas, sort_keys=True)
@@ -92,7 +143,17 @@ class GeminiChat:
         """Returns (model_content, function_calls [(name, args)], text). ``tools``: the project's
         read-only tool schemas (the same tools, with that project's twin ids as examples)."""
         config = self._config_for(tools) if tools else self._config
-        resp = self._client.models.generate_content(model=self.model_id, contents=contents, config=config)
+        if self._attempts is not None:
+            self._attempts, self._token_seconds = 0, 0.0
+        started, error = time.monotonic(), None
+        try:
+            resp = self._client.models.generate_content(model=self.model_id, contents=contents, config=config)
+        except Exception as exc:
+            error = type(exc).__name__
+            raise
+        finally:
+            self.last_call = {"seconds": time.monotonic() - started, "attempts": self._attempts,
+                              "token_seconds": self._token_seconds, "error": error}
         candidate = resp.candidates[0] if resp.candidates else None
         content = candidate.content if candidate else None
         calls = [(c.name, dict(c.args or {})) for c in (resp.function_calls or [])]
@@ -112,12 +173,22 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
     used: list[dict] = []
     takes_tools = "tools" in inspect.signature(chat.generate).parameters
     model_calls = 0
+    chain_started = time.monotonic()
     for rounds in range(MAX_TOOL_ROUNDS):
-        content, calls, text = chat.generate(contents, tools=toolbox.schemas()) if takes_tools else chat.generate(contents)
+        try:
+            content, calls, text = chat.generate(contents, tools=toolbox.schemas()) if takes_tools else chat.generate(contents)
+        except Exception as exc:
+            model_calls += 1
+            _log_model_call(chat, model_calls, type(exc).__name__)
+            log.info("assistant chain: %d model calls, %.3f s, outcome error %s", model_calls,
+                     time.monotonic() - chain_started, type(exc).__name__)
+            raise
         model_calls += 1
+        _log_model_call(chat, model_calls)
         if not calls:
             if not text:
                 raise AssistantError("the model returned no answer")
+            log.info("assistant chain: %d model calls, %.3f s, outcome answer", model_calls, time.monotonic() - chain_started)
             log.info("assistant answer: %d model calls, %d tool rounds, %d tool calls", model_calls, rounds, len(used))
             return {"answer": text.strip(), "tool_calls": used, "tick": toolbox.tick,
                     "model_id": chat.model_id, "notice": NOTICE,
@@ -132,5 +203,6 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
             used.append({"name": name, "args": args})
             results.append((name, json.loads(json.dumps(result, default=str))))
         contents.append(chat.tool_results(results))
+    log.info("assistant chain: %d model calls, %.3f s, outcome gave_up", model_calls, time.monotonic() - chain_started)
     log.info("assistant gave up: %d model calls, %d tool rounds", model_calls, MAX_TOOL_ROUNDS)
     raise AssistantError("the question needed too many evidence lookups; try a narrower question")

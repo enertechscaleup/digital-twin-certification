@@ -4,11 +4,13 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+import app.assistant as assistant
 import app.main as main
-from app.assistant import MAX_TOOL_ROUNDS, AssistantError, ask
+from app.assistant import MAX_TOOL_ROUNDS, AssistantError, GeminiChat, ask
 from app.assistant_tools import Toolbox, ToolError
 from projects import load_project
 from app.evidence import verify_run, LocalStore
@@ -129,6 +131,58 @@ class TestAssistant(unittest.TestCase):
         with self.assertRaisesRegex(AssistantError, "too many evidence lookups; try a narrower question"):
             ask(chat, Toolbox(self.ev, 5, False), "deeper question", [])
         self.assertEqual(chat.script, ["never reached"])
+
+    # -- diagnostics ------------------------------------------------------
+
+    def test_each_model_call_is_logged_without_question_or_answer_text(self):
+        assistant._first_model_call = True
+        chat = Chat([[("get_current_tick", {})], "SECRET-ANSWER-TEXT"])
+        chat.last_call = {"seconds": 1.25, "attempts": 1, "token_seconds": 0.5, "error": None}
+        with self.assertLogs("twinevidence.assistant", "INFO") as logs:
+            ask(chat, Toolbox(self.ev, 5, False), "SECRET-QUESTION-TEXT", [])
+        lines = "\n".join(logs.output)
+        calls = [l for l in logs.output if "assistant model call" in l]
+        self.assertEqual(len(calls), 2)
+        self.assertIn("model call 1: 1.250 s, http attempts 1, sdk retried no, token 0.500 s, error none, "
+                      "first call on instance yes", calls[0])
+        self.assertIn("first call on instance no", calls[1])
+        self.assertIn("assistant chain: 2 model calls", lines)
+        self.assertIn("outcome answer", lines)
+        self.assertNotIn("SECRET-QUESTION-TEXT", lines)
+        self.assertNotIn("SECRET-ANSWER-TEXT", lines)
+
+    def test_a_failed_model_call_is_logged_with_its_error_class(self):
+        class Failing(Chat):
+            def generate(self, contents):
+                raise TimeoutError("slow")
+        with self.assertLogs("twinevidence.assistant", "INFO") as logs, self.assertRaises(TimeoutError):
+            ask(Failing([]), Toolbox(self.ev, 5, False), "q", [])
+        self.assertIn("error TimeoutError", logs.output[0])
+        self.assertIn("outcome error TimeoutError", logs.output[1])
+
+    def test_gemini_wrapper_counts_http_attempts_and_records_errors(self):
+        api = SimpleNamespace(_request_once=lambda *a, **k: "ok", _access_token=lambda: "token")
+        state = {"retries": 1, "fail": False}
+
+        def generate_content(**kwargs):  # stands in for the SDK: token, then one attempt per try
+            api._access_token()
+            for _ in range(1 + state["retries"]):
+                api._request_once()
+            if state["fail"]:
+                raise ConnectionError("down")
+            return SimpleNamespace(candidates=[], function_calls=[], text="hi")
+
+        chat = object.__new__(GeminiChat)
+        chat._client = SimpleNamespace(_api_client=api, models=SimpleNamespace(generate_content=generate_content))
+        chat._attempts, chat._token_seconds, chat._configs, chat.model_id = 0, 0.0, {}, "m"
+        chat._config, chat.types = None, SimpleNamespace(FinishReason=SimpleNamespace(MAX_TOKENS="MAX"))
+        chat._instrument()
+        chat.generate(["c"])
+        self.assertEqual((chat.last_call["attempts"], chat.last_call["error"]), (2, None))
+        state.update(retries=0, fail=True)
+        with self.assertRaises(ConnectionError):
+            chat.generate(["c"])
+        self.assertEqual((chat.last_call["attempts"], chat.last_call["error"]), (1, "ConnectionError"))
 
     # -- endpoint ---------------------------------------------------------
 
