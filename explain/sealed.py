@@ -110,6 +110,20 @@ def status_after(ledger: list[dict], seq: int) -> dict[str, str]:
     return out
 
 
+def status_history(ledger: list[dict], seq: int) -> dict[str, list[tuple[int, str]]]:
+    """Each twin's statuses up to entry ``seq``, as (tick, status) in order."""
+    out: dict[str, list[tuple[int, str]]] = {}
+    for e in ledger[:seq + 1]:
+        p = e["payload"]
+        if e["entry_type"] == "assurance_issued":
+            out.setdefault(p["twin_id"], []).append((p.get("effective_from_tick", 0), "assured"))
+        elif e["entry_type"] == "composition_assured":
+            out.setdefault(p["system_twin_id"], []).append((p.get("effective_from_tick", 0), "assured"))
+        elif e["entry_type"] == "assurance_status_changed":
+            out.setdefault(p["twin_id"], []).append((p["tick"], p["to"]))
+    return out
+
+
 def twin_names(project: Project, registry: Registry) -> dict[str, str]:
     names = {registry.products[t.twin_type].operational_twin_id: t.name for t in project.twins}
     names[registry.system.operational_system_twin_id] = project.system_name
@@ -305,7 +319,8 @@ def generate_sealed(ledger: list[dict], readings: list[dict], timeline: list[dic
                     check = validate(response, SCHEMA, facts, allowed_seqs=allowed,
                                      status_now=facts["status_at_subject"], aliases=aliases,
                                      engine_cause=_engine_cause(kind, entry),
-                                     min_citations=2 if kind == "cross_twin_narrative" else 1)
+                                     min_citations=2 if kind == "cross_twin_narrative" else 1,
+                                     history=status_history(ledger, entry["seq"]))
                     problems = check.problems
                 if not problems:
                     break

@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import inspect
 import json
+import logging
 import os
 
 from app.assistant_tools import TOOL_SCHEMAS, Toolbox, ToolError
 from explain.gemini import PINNED_LOCATION, PINNED_MODEL
 
 MAX_TOOL_ROUNDS = 6
+log = logging.getLogger("twinevidence.assistant")
 # Includes the model's thinking, which can use several hundred tokens before the answer.
 MAX_OUTPUT_TOKENS = 4000
 NOTICE = "AI assistant. Answers come only from the evidence up to the tick on screen and are never used in any assurance decision."
@@ -109,13 +111,17 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
 
     used: list[dict] = []
     takes_tools = "tools" in inspect.signature(chat.generate).parameters
-    for _ in range(MAX_TOOL_ROUNDS):
+    model_calls = 0
+    for rounds in range(MAX_TOOL_ROUNDS):
         content, calls, text = chat.generate(contents, tools=toolbox.schemas()) if takes_tools else chat.generate(contents)
+        model_calls += 1
         if not calls:
             if not text:
                 raise AssistantError("the model returned no answer")
+            log.info("assistant answer: %d model calls, %d tool rounds, %d tool calls", model_calls, rounds, len(used))
             return {"answer": text.strip(), "tool_calls": used, "tick": toolbox.tick,
-                    "model_id": chat.model_id, "notice": NOTICE}
+                    "model_id": chat.model_id, "notice": NOTICE,
+                    "model_calls": model_calls, "tool_rounds": rounds}
         contents.append(content)
         results = []
         for name, args in calls:
@@ -126,4 +132,5 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
             used.append({"name": name, "args": args})
             results.append((name, json.loads(json.dumps(result, default=str))))
         contents.append(chat.tool_results(results))
+    log.info("assistant gave up: %d model calls, %d tool rounds", model_calls, MAX_TOOL_ROUNDS)
     raise AssistantError("the question needed too many evidence lookups; try a narrower question")

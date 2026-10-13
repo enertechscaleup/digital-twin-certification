@@ -173,7 +173,7 @@ class TestRejection(unittest.TestCase):
     def test_a_figure_not_in_the_facts_is_rejected(self):
         arts, rejected = self.explain_with(lambda f: valid([f["subject"]["ledger_seq"]], "The gap was 12.3456%."))
         self.assertEqual(arts, [])
-        self.assertTrue(all("quotes figures not in its facts: ['12.3456']" in r["problems"] for r in rejected))
+        self.assertTrue(all("quotes values not in its facts: ['12.3456']" in r["problems"] for r in rejected))
 
     def test_contradicting_the_engines_classification_is_rejected(self):
         arts, rejected = self.explain_with(
@@ -197,6 +197,43 @@ class TestRejection(unittest.TestCase):
                         on_rejected=rejected.append)
         mine = [r for r in rejected if r["explains_ledger_seq"] == dispatcher_flag["seq"]]
         self.assertTrue(mine and "contradicting the engine's classification (envelope_violation)" in mine[0]["problems"][0])
+
+
+class TestStricterChecks(unittest.TestCase):
+    """Figures must match a fact of the same kind; past-tense status claims must match the history."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.r = cell_run()
+        cls.core = cls.r.ledger.entries
+
+    def check(self, seq, text, kind=None):
+        from explain.sealed import _aliases, _allowed_seqs, facts_for, status_history
+        entry = self.core[seq]
+        kind = kind or kinds_for(entry, REG)[0]
+        f = facts_for(kind, entry, self.core, self.r.readings, self.r.timeline, REG, CELL)
+        return validate(valid([seq], text), SCHEMA, f, allowed_seqs=_allowed_seqs(f), status_now=f["status_at_subject"],
+                        aliases=_aliases(CELL, REG), engine_cause=None, history=status_history(self.core, seq)).problems
+
+    def test_a_count_quoted_as_a_tick_is_rejected(self):
+        self.assertEqual(self.check(62, "27 of 243 test points failed at tick 60."), [])
+        self.assertIn("quotes ticks not in its facts: ['243']", self.check(62, "The interface failed at tick 243."))
+
+    def test_a_tick_quoted_as_a_count_is_rejected(self):
+        self.assertIn("quotes counts not in its facts: ['60']", self.check(62, "The interface failed at 60 test points."))
+
+    def test_channel_ids_with_digits_are_names_not_figures(self):
+        self.assertEqual(self.check(62, "The arrivals_1 input failed at 27 of 243 points."), [])
+
+    def test_past_tense_claims_must_match_the_history(self):
+        self.assertEqual(self.check(44, "AMR 1 was flagged at tick 21 and became nullified at tick 36."), [])
+        self.assertEqual(self.check(44, "AMR 1 changed from flagged to nullified."), [])
+        self.assertIn("states amr 1 was assured at tick 40; the ledger does not show that",
+                      self.check(44, "AMR 1 was assured at tick 40."))
+        self.assertIn("states amr 1 changed from nullified to flagged; the ledger shows no such change",
+                      self.check(44, "AMR 1 changed from nullified to flagged."))
+        self.assertIn("states pick station was flagged at any point up to this entry; the ledger does not show that",
+                      self.check(44, "The pick station was flagged."))
 
 
 class TestTamperingAndOutage(unittest.TestCase):
