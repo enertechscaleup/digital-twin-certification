@@ -27,6 +27,9 @@ ROLES = ("product", "controller")
 DEFAULT_TEST_LEVELS = 5
 # Which view a project opens in: its entry twins alone, or the whole system.
 OPENS_IN = ("entry", "system")
+# Which evidence panels a project's screens show: the standard set, or also the cascade and
+# status-timeline panels.
+EVIDENCE_PANELS = ("standard", "extended")
 
 
 class ProjectError(ValueError):
@@ -63,6 +66,7 @@ class Project:
     connections: tuple[dict, ...]
     test_levels: int = DEFAULT_TEST_LEVELS
     opens_in: str = "entry"
+    evidence_panels: str = "standard"
 
     @property
     def processing_order(self) -> tuple[str, ...]:
@@ -157,6 +161,9 @@ def load_project(path: Path | str = DEFAULT_PROJECT) -> Project:
     opens_in = raw.get("view", {}).get("opens_in", "entry")
     if opens_in not in OPENS_IN:
         issues.append(f"view opens_in must be one of {', '.join(OPENS_IN)}")
+    panels = raw.get("view", {}).get("evidence_panels", "standard")
+    if panels not in EVIDENCE_PANELS:
+        issues.append(f"view evidence_panels must be one of {', '.join(EVIDENCE_PANELS)}")
     for t, tw in twins.items():
         legacy = tw.config.get("linked_inputs")
         if legacy is not None and legacy != _linked_from(connections, t):
@@ -174,6 +181,7 @@ def load_project(path: Path | str = DEFAULT_PROJECT) -> Project:
         system_name=comp.get("name", raw["name"]), system_description=comp.get("description", ""),
         design_system_twin_id=comp["design_system_twin_id"], operational_system_twin_id=comp["operational_system_twin_id"],
         output_constituents=outputs, connections=connections, test_levels=levels, opens_in=opens_in,
+        evidence_panels=panels,
     )
 
 

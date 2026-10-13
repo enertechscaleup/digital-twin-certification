@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
 import { Graph, StatusPill } from './components.jsx'
 import { FlaskConical } from 'lucide-react'
-import { AMR, topology, twinByKey } from './model/projects.js'
+import { topology, twinByKey } from './model/projects.js'
 
 const NEXT = { assured: 'flagged', flagged: 'nullified', nullified: 'assured' }
 const RANK = { assured: 0, flagged: 1, nullified: 2 }
@@ -67,6 +67,7 @@ function Pattern({ project, index, blurb, preview }) {
 
 export default function CompositionView({ real }) {
   const oilGas = real?.find((p) => p.project_id === 'oil-gas-compressor-train')
+  const cell = real?.find((p) => p.project_id === 'amr-fulfilment-cell')
   return (
     <div className="content-width page">
       <div className="page-head">
@@ -90,7 +91,8 @@ export default function CompositionView({ real }) {
         <div className="compare">
           {oilGas ? <Pattern project={oilGas} index="Pattern A" blurb="The motor's shaft speed is the compressor's drive speed. No coordinating controller: each twin feeds the next." />
             : <div className="panel panel-pad muted">Loading the compressor train…</div>}
-          <Pattern project={AMR} index="Pattern B" preview blurb="A dispatcher assigns tasks to two robots working side by side; both deliver to one pick station." />
+          {cell ? <Pattern project={cell} index="Pattern B" blurb="A dispatcher assigns tasks to two robots working side by side; both deliver to one pick station." />
+            : <div className="panel panel-pad muted">Loading the fulfilment cell…</div>}
         </div>
       </section>
 

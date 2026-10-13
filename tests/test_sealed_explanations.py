@@ -292,6 +292,7 @@ class TestTamperingAndOutage(unittest.TestCase):
             self.assertEqual(explanations_upto(ev, 79), [])
             self.assertEqual(state_at(ev, 79)["twins"]["amr1-op-001"]["status"], "assured")
             self.assertIsNone(json.loads((d / f"{RUN}.manifest.json").read_text())["ai_model"])
+            self.assertEqual(main.explanation_status(ev)["status"], "unavailable")  # the UI says so
 
 
 class Chat:

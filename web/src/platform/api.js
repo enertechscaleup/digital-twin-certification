@@ -35,6 +35,8 @@ export function toViewProject(d, runs) {
     domain: d.domain,
     summary: d.summary,
     data: 'evidence',
+    opens_in: d.opens_in || 'entry',
+    evidence_panels: d.evidence_panels || 'standard',
     gap: { metric: d.gap_metric },
     entry_twins: d.entry_twins.map((id) => keyOf[id]),
     twins,
@@ -52,6 +54,7 @@ export function toViewProject(d, runs) {
 /** Every project on the platform, with its runs, shaped for the screens. */
 export async function loadProjects() {
   const { projects } = await getJson('/api/projects')
+  projects.sort((a, b) => a.name.localeCompare(b.name))
   return Promise.all(projects.map(async (p) => {
     const [detail, { runs }] = await Promise.all([
       getJson(`/api/projects/${p.project_id}`),

@@ -4,8 +4,8 @@
 //
 // Real entries come from /api/registry (read from the twins' own config files).
 // PREVIEW_REGISTRY below is hand-typed: entries with no real twin behind them yet are
-// shown as "Preview listing"; the motor and compressor entries here are replaced by
-// their real counterparts. Vendors and twin names are fictional.
+// shown as "Preview listing"; the compressor-train and fulfilment-cell entries here are
+// replaced by their real counterparts. Vendors and twin names are fictional.
 import { getJson } from '../api.js'
 
 const ch = (id, name, unit, direction, min, max) => ({ id, name, unit, direction, declared_range: [min, max] })
@@ -28,32 +28,32 @@ export const PREVIEW_REGISTRY = [
       ch('pressure', 'Outlet pressure', 'bar', 'output', 3.0, 6.5), ch('temperature', 'Outlet temperature', '°C', 'output', 50, 95)],
   },
   {
-    registry_id: 'vendor-c/fleetflow', vendor: 'Synthetic vendor C', name: 'FleetFlow dispatcher twin', asset_kind: 'fleet_dispatcher',
+    registry_id: 'vendor-c/dispatch-d1', vendor: 'Synthetic vendor C', name: 'Dispatcher twin D1', asset_kind: 'fleet_dispatcher',
     domain: 'Warehousing & robotics', role: 'controller', modes: ['observational'],
-    summary: 'Fleet controller. Predicts the task rate it will assign to each robot from incoming order lines.',
+    summary: 'Fleet controller. Predicts the task rate it assigns to each robot from incoming order lines.',
     characteristic: { channel: 'tasks_1', shape: 'shift' },
     channels: [ch('order_rate', 'Order lines', 'lines/h', 'input', 300, 900),
       ch('tasks_1', 'Tasks to AMR 1', 'tasks/h', 'output', 40, 110), ch('tasks_2', 'Tasks to AMR 2', 'tasks/h', 'output', 40, 110)],
   },
   {
-    registry_id: 'vendor-d/amr-600', vendor: 'Synthetic vendor D', name: 'AMR-600 drive twin', asset_kind: 'amr',
-    domain: 'Warehousing & robotics', role: 'product', modes: ['observational', 'semi_autonomous'],
-    summary: 'Autonomous mobile robot. Predicts travel speed and tote deliveries from tasks, battery and payload.',
+    registry_id: 'vendor-d/robot-r2', vendor: 'Synthetic vendor D', name: 'Mobile robot twin R2', asset_kind: 'amr',
+    domain: 'Warehousing & robotics', role: 'product', modes: ['semi_autonomous'],
+    summary: 'Autonomous mobile robot. Predicts travel speed and tote deliveries from assigned tasks, battery voltage and speed setpoint.',
     characteristic: { channel: 'speed', shape: 'trips' },
-    channels: [ch('task_rate', 'Assigned tasks', 'tasks/h', 'input', 40, 110), ch('battery', 'Battery voltage', 'V', 'input', 44, 52),
-      ch('payload', 'Payload', 'kg', 'input', 0, 600), ch('speed', 'Travel speed', 'm/s', 'output', 1.2, 2.0),
-      ch('deliveries', 'Tote deliveries', 'totes/h', 'output', 40, 110)],
+    channels: [ch('task_rate', 'Assigned tasks', 'tasks/h', 'input', 38, 110), ch('battery', 'Battery voltage', 'V', 'input', 44, 52),
+      ch('speed_setpoint', 'Speed setpoint', 'm/s', 'input', 1.2, 2.0), ch('speed', 'Travel speed', 'm/s', 'output', 1.0, 2.1),
+      ch('deliveries', 'Tote deliveries', 'totes/h', 'output', 30, 140)],
   },
   {
-    registry_id: 'vendor-e/ps-2', vendor: 'Synthetic vendor E', name: 'PS-2 pick station twin', asset_kind: 'pick_station',
+    registry_id: 'vendor-e/pick-p4', vendor: 'Synthetic vendor E', name: 'Pick station twin P4', asset_kind: 'pick_station',
     domain: 'Warehousing & robotics', role: 'product', modes: ['observational'],
     summary: 'Goods-to-person pick station. Predicts pick rate and cycle time from tote arrivals.',
     characteristic: { channel: 'pick_rate', shape: 'shift' },
-    channels: [ch('arrivals_1', 'Tote arrivals, AMR 1', 'totes/h', 'input', 55, 110), ch('arrivals_2', 'Tote arrivals, AMR 2', 'totes/h', 'input', 55, 110),
-      ch('pick_rate', 'Pick rate', 'picks/h', 'output', 300, 900), ch('cycle_time', 'Cycle time', 's', 'output', 6, 14)],
+    channels: [ch('arrivals_1', 'Tote arrivals, AMR 1', 'totes/h', 'input', 33.5, 125), ch('arrivals_2', 'Tote arrivals, AMR 2', 'totes/h', 'input', 33.5, 125),
+      ch('pick_rate', 'Pick rate', 'picks/h', 'output', 300, 1160), ch('cycle_time', 'Cycle time', 's', 'output', 4.4, 10.1)],
   },
   {
-    registry_id: 'vendor-f/beltline', vendor: 'Synthetic vendor F', name: 'BeltLine conveyor twin', asset_kind: 'conveyor',
+    registry_id: 'vendor-f/conveyor-c3', vendor: 'Synthetic vendor F', name: 'Conveyor twin C3', asset_kind: 'conveyor',
     domain: 'Manufacturing', role: 'product', modes: ['observational'],
     summary: 'Belt conveyor. Predicts belt speed from drive frequency.',
     characteristic: { channel: 'belt_speed', shape: 'ramp_hold' },

@@ -1,15 +1,16 @@
 // The operation view for a real project: every value on screen comes from the
 // verified evidence as of the tick on screen (/api/runs/{run}/view?tick=N).
 // Replay behaviour matches the original dashboard: it opens on the project's entry
-// twins alone, one tick every 2 s, and accepts ?run=, ?tick=, ?stage=system,
+// twins alone (or on the whole system, if the project says so), one tick every 2 s,
+// and accepts ?run=, ?tick=, ?stage=system,
 // ?reveal=N (connect the rest of the system at tick N) and ?tick_ms=.
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpRight, Fingerprint, Link2, Pause, Play, RotateCcw, ShieldAlert, ShieldCheck, SkipBack, SkipForward } from 'lucide-react'
 import { ConfigDrawer, Graph, StatusPill, TraceChart } from './components.jsx'
 import { Header } from './OperationView.jsx'
-import { Adjustment, Anomalies, Assistant, CompositionTests, Explanations, Integrity, Ledger, Lineage, Recalibration } from './EvidencePanels.jsx'
-import { CAUSES, entryTwins, namer, short } from './evidenceText.js'
+import { Adjustment, Anomalies, Assistant, Cascade, CompositionTests, Explanations, Integrity, Ledger, Lineage, Recalibration, StatusTimeline } from './EvidencePanels.jsx'
+import { CAUSES, entryTwins, explanationsBySeq, namer, short } from './evidenceText.js'
 import { getJson, unitLabel } from './api.js'
 import { TWIN_MODES, topology } from './model/projects.js'
 import { digitsFor, fmt } from './format.js'
@@ -44,7 +45,9 @@ export default function EvidenceView({ project }) {
   const [view, setView] = useState(null)
   const [tick, setTick] = useState(Number(params.get('tick')) || 0)
   const [playing, setPlaying] = useState(false)
-  const [stage, setStage] = useState(params.get('stage') === 'system' ? 'system' : null)
+  const [stage, setStage] = useState(params.get('stage') === 'system' || project.opens_in === 'system' ? 'system' : null)
+  const [focus, setFocus] = useState(null)
+  const onCite = (seq) => setFocus((prev) => ({ seq, at: (prev?.at || 0) + 1 }))
   const [selected, setSelected] = useState(project.entry_twins[0])
   const [drawer, setDrawer] = useState(false)
   const [error, setError] = useState(null)
@@ -104,6 +107,8 @@ export default function EvidenceView({ project }) {
   const soloProject = { ...project, twins: entry, composition: { ...project.composition, connections: [], output_constituents: [] } }
   const entryNames = entry.map((t) => t.name).join(' & ')
   const restNames = rest.map((t) => t.name.toLowerCase()).join(' & ')
+  const extended = project.evidence_panels === 'extended'
+  const bySeq = explanationsBySeq(explanations)
   const v = meta.verification
   const checksRun = v.checks.filter((c) => c.applicable !== false).length
 
@@ -126,6 +131,7 @@ export default function EvidenceView({ project }) {
           </>,
           `${meta.title} · scenario ${meta.scenario} · seed ${meta.seed} · synthetic data`,
         )}
+        {meta.label && <p className="run-label">{meta.label} <span className="muted">From the run's scenario file.</span></p>}
       </div>
 
       <div className="replay">
@@ -169,6 +175,10 @@ export default function EvidenceView({ project }) {
           </div>
         </section>
 
+        {extended && showSystem && (
+          <section className="section"><StatusTimeline project={project} timeline={view.timeline} ticks={meta.ticks} tick={tick} ledger={view.ledger} onCite={onCite} /></section>
+        )}
+
         <div className="op-grid section">
           <div style={{ display: 'grid', gap: 18, minWidth: 0 }}>
             <div className="panel">
@@ -208,10 +218,17 @@ export default function EvidenceView({ project }) {
             </div>
             <Lineage meta={meta} state={state} ledger={view.ledger} who={who}
               inScope={(id) => (id === systemId ? showSystem && rest.length > 0 : showSystem || soloIds.has(id))} />
-            <Ledger entries={ledger} head={state.ledger_head_so_far} total={state.ledger_entries_so_far} who={who} />
+            <Ledger entries={ledger} head={state.ledger_head_so_far} total={state.ledger_entries_so_far} who={who}
+              explanations={bySeq} focus={focus} onCite={onCite} />
           </div>
         </div>
       </div>
+
+      {extended && showSystem && view.cascade?.length > 0 && (
+        <div className="content-width" style={{ paddingBottom: 24 }}>
+          <Cascade cascade={view.cascade} explanations={explanations} who={who} onCite={onCite} />
+        </div>
+      )}
 
       {showSystem && rest.length > 0 && state.composition_tests.length > 0 && (
         <div className="content-width" style={{ paddingBottom: 32 }}>
@@ -240,8 +257,8 @@ export default function EvidenceView({ project }) {
       <div className="content-width" style={{ paddingBottom: 56 }}>
         <div className="evidence-grid section">
           <Assistant run={run} tick={tick} showSystem={showSystem} soloNames={entryNames} />
-          <Explanations items={explanations} />
-          <Anomalies ledger={ledger} who={who} />
+          <Explanations items={explanations} status={meta.ai_explanations} onCite={onCite} />
+          <Anomalies ledger={ledger} who={who} split={extended} />
           <Integrity key={run} meta={meta} run={run} />
         </div>
       </div>

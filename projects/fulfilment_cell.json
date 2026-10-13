@@ -5,7 +5,7 @@
   "domain": "Warehousing & robotics",
   "summary": "A fleet dispatcher assigns tasks to two autonomous mobile robots, which deliver totes to one pick station. Four independently owned twins, composed into one system twin.",
   "gap": {"metric": "relative_pct_of_prediction"},
-  "view": {"opens_in": "system"},
+  "view": {"opens_in": "system", "evidence_panels": "extended"},
   "twins": [
     {"twin_type": "dispatcher", "config": "../telemetry/config/dispatcher.json", "name": "Fleet dispatcher", "role": "controller",
      "registry_id": "vendor-c/dispatch-d1", "asset_kind": "fleet_dispatcher"},

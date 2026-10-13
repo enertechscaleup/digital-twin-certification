@@ -32,7 +32,7 @@ function example() {
     domain: 'Manufacturing',
     summary: 'A conveyor feeds a case packer. Example values: edit them or clear the form.',
     gap: { metric: GAP_METRIC.id },
-    twins: [connectTwin(registryEntry('vendor-f/beltline'), 'Conveyor', 'conveyor'), packer],
+    twins: [connectTwin(registryEntry('vendor-f/conveyor-c3'), 'Conveyor', 'conveyor'), packer],
     composition: {
       system_twin: { name: 'Packaging line 2' },
       output_constituents: ['case_packer'],

@@ -1,15 +1,33 @@
 {
   "name": "amr_full_cycle",
+  "label": "Synthetic data. Full assurance cycle: AMR 1's drive wheels wear, it is recalibrated, the twins are run jointly again, and a human approves one adjustment.",
   "description": "Fulfilment cell, full assurance lifecycle (synthetic data). AMR 1's drive wheels wear from tick 5 and settle at 12% wear: its travel speed and tote deliveries fall, Assured -> Flagged -> Nullified. Fewer totes reach the pick station, so its arrivals from AMR 1 fall below their assured range: the pick station is Flagged and the system twin with it. AMR 2's wheel-odometry speed reading drops out for two ticks (a data-quality fault, not twin error). At tick 60 the operator requests recalibration of AMR 1: the flagged-period data is split by time, both parts are sealed, only the earlier part is released to the twin's owner, and the recalibrated twin is validated on the held-out later part. The robots and pick station are then run jointly again. At tick 64 the recalibrated, semi-autonomous AMR 1 twin recommends raising its speed setpoint to bring the pick station's arrivals from AMR 1 back into their assured range; a human operator approves at tick 65; it is executed at tick 66; ticks 67-71 are checked.",
   "ticks": 80,
   "operational_hours_per_tick": 24,
   "wear": [
-    {"twin_type": "amr1", "start_tick": 5, "pct_per_1000_hours": {"speed": -20, "deliveries": -20}, "max_abs_pct": 12}
+    {
+      "twin_type": "amr1",
+      "start_tick": 5,
+      "pct_per_1000_hours": {
+        "speed": -20,
+        "deliveries": -20
+      },
+      "max_abs_pct": 12
+    }
   ],
   "data_quality": [
-    {"twin_type": "amr2", "channel": "speed", "start_tick": 46, "duration_ticks": 2, "kind": "dropout"}
+    {
+      "twin_type": "amr2",
+      "channel": "speed",
+      "start_tick": 46,
+      "duration_ticks": 2,
+      "kind": "dropout"
+    }
   ],
-  "recalibration": {"twin_type": "amr1", "at_tick": 60},
+  "recalibration": {
+    "twin_type": "amr1",
+    "at_tick": 60
+  },
   "adjustment": {
     "twin_type": "amr1",
     "control_channel": "speed_setpoint",
@@ -17,8 +35,14 @@
     "approve_at_tick": 65,
     "execute_at_tick": 66,
     "check_ticks": 5,
-    "objective": {"twin_type": "pick_station", "channel": "arrivals_1",
-                  "description": "Bring the pick station's tote arrivals from AMR 1 back into their assured range"},
-    "approval": {"approver": "Operator (demo)", "decision": "approve"}
+    "objective": {
+      "twin_type": "pick_station",
+      "channel": "arrivals_1",
+      "description": "Bring the pick station's tote arrivals from AMR 1 back into their assured range"
+    },
+    "approval": {
+      "approver": "Operator (demo)",
+      "decision": "approve"
+    }
   }
 }

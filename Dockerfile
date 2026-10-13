@@ -12,6 +12,8 @@ WORKDIR /srv
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY projects/ projects/
+# Scenario files: each run's one-line label is read from its scenario.
+COPY scenarios/ scenarios/
 COPY registry/ registry/
 COPY telemetry/ telemetry/
 COPY engine/ engine/

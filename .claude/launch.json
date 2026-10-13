@@ -48,6 +48,21 @@
         "8200"
       ],
       "port": 8200
+    },
+    {
+      "name": "platform-fulfilment-dev",
+      "runtimeExecutable": "/usr/bin/env",
+      "runtimeArgs": [
+        "EVIDENCE_SOURCE=local",
+        "EVIDENCE_DIR=data/dev-all",
+        "RUNS_CONFIG=data/dev-all/runs.json",
+        "GOOGLE_CLOUD_PROJECT=project-46053a8a-6324-40f0-ba8",
+        ".venv/bin/uvicorn",
+        "app.main:app",
+        "--port",
+        "8300"
+      ],
+      "port": 8300
     }
   ]
 }

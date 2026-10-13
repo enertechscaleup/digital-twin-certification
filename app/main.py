@@ -7,7 +7,10 @@ and assistant only ever see what the evidence says up to the tick on screen.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import re
 from pathlib import Path
 import threading
 import time
@@ -25,9 +28,20 @@ from app.state import core_upto, explanations_upto, state_at
 from engine.lineage import REGISTERED, load_identities, product_identity, registered_versions
 from engine.registry import load_registry
 from explain.facts import EvidenceIntegrityError
+from explain.sealed import causal_chain, kinds_for
+from explain.supplementary import UNAVAILABLE
 from projects import ProjectError, find_project, list_projects
 
 app = FastAPI(title="TwinEvidence")
+
+# The platform's own log lines (for example the assistant's model calls and tool rounds per
+# question) go to stdout, which Cloud Run records.
+_log = logging.getLogger("twinevidence")
+if not _log.handlers:
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    _log.addHandler(_handler)
+    _log.setLevel(logging.INFO)
 
 _cache: dict[str, RunEvidence] = {}
 _lock = threading.Lock()
@@ -59,6 +73,8 @@ def _project_detail(p) -> dict:
     return {
         **_project_summary(p),
         "gap_metric": p.gap_metric,
+        "opens_in": p.opens_in,
+        "evidence_panels": p.evidence_panels,
         "entry_twins": [reg.products[t].operational_twin_id for t in p.entry_twins],
         # Twins below are in processing order (feeding twins first); display fields come from the project file.
         "twins": {
@@ -141,8 +157,11 @@ def registry() -> dict:
                     entries[tw.registry_id]["used_by"].append(p.project_id)
                 continue
             cfg = tw.config
+            # Several twins of one registered model (two robots) list the model, not the first instance.
+            shared = sum(1 for x in p.twins if x.registry_id == tw.registry_id) > 1
+            name = re.sub(r"\s+\d+$", "", tw.name) if shared else tw.name
             entries[tw.registry_id] = {
-                "registry_id": tw.registry_id, "name": f"{tw.name} twin", "vendor": cfg["vendor"],
+                "registry_id": tw.registry_id, "name": f"{name} twin", "vendor": cfg["vendor"],
                 "asset_kind": tw.asset_kind, "domain": p.domain, "role": tw.role,
                 "summary": cfg.get("description", ""), "modes": [cfg["twin_mode"]],
                 "channels": [{"id": c["channel_id"], "name": c["name"], "unit": c["unit"], "direction": c["direction"],
@@ -179,11 +198,14 @@ def meta(run: str) -> dict:
     if pin.get("project_id"):
         detail = _project_detail(_project_or_404(pin["project_id"]))
         project_fields = {"project_id": detail["project_id"], "twins": detail["twins"],
-                          "system_twin": detail["system_twin"], "entry_twins": detail["entry_twins"]}
+                          "system_twin": detail["system_twin"], "entry_twins": detail["entry_twins"],
+                          "opens_in": detail["opens_in"], "evidence_panels": detail["evidence_panels"]}
     return {
         "run": run, "title": ev.title, "ticks": len(ev.timeline), "tick_seconds": ev.tick_seconds,
         "start_time": ev.manifest["start_time"], "scenario": started["scenario"], "seed": started["seed"],
         "escalation_protocol": started["escalation_protocol"],
+        "label": scenario_label(started["scenario"]),
+        "ai_explanations": explanation_status(ev),
         "ai_model": ev.manifest.get("ai_model"), "code_commit": ev.manifest.get("code_commit"),
         "evidence_source": ev.source, "verification": ev.verification,
         "display_ranges": _display_ranges(ev),
@@ -193,17 +215,56 @@ def meta(run: str) -> dict:
     }
 
 
+SCENARIOS = Path(__file__).resolve().parent.parent / "scenarios"
+
+
+def scenario_label(scenario: str) -> str | None:
+    """The run's one-line label, written in its scenario file (never by the AI)."""
+    path = SCENARIOS / f"{scenario}.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("label")
+    except (OSError, ValueError):
+        return None
+
+
+def explanation_status(ev: RunEvidence) -> dict:
+    """Whether the run carries AI explanations, and if not, why."""
+    unavailable = next((e["payload"] for e in ev.supplementary[1:] if e["entry_type"] == UNAVAILABLE), None)
+    count = sum(1 for e in ev.supplementary[1:] if e["entry_type"] == "ai_artifact")
+    if unavailable:
+        return {"status": "unavailable", "artifacts": count, "reason": unavailable["notice"]}
+    return {"status": "available" if count else "none", "artifacts": count}
+
+
+def cascade_upto(ev: RunEvidence, t: int, registry) -> list[dict]:
+    """Each system-twin reason whose cause runs across a connection, with every ledger entry on
+    its path (explain/sealed.py causal_chain), up to tick ``t``. Built from the ledger alone."""
+    narratives = {e["payload"]["explains_ledger_seq"] for e in ev.supplementary[1:]
+                  if e["entry_type"] == "ai_artifact" and e["payload"]["artifact_type"] == "cross_twin_narrative"}
+    out = []
+    for e in ev.core:
+        if ev.tick_of(e) > t or "cross_twin_narrative" not in kinds_for(e, registry):
+            continue
+        out.append({"seq": e["seq"], "tick": ev.tick_of(e), "twin_id": e["payload"]["twin_id"],
+                    "reasons": e["payload"]["new_reasons"], "chain": causal_chain(e, ev.core, registry),
+                    "narrative": e["seq"] in narratives})
+    return out
+
+
 @app.get("/api/runs/{run}/view")
 def view(run: str, tick: int) -> dict:
     """Everything the dashboard shows for one tick, cut off at that tick."""
     ev = evidence(run)
     t = max(0, min(tick, len(ev.timeline) - 1))
+    pin = _pinned(run)
+    project = _project_or_404(pin["project_id"]) if pin.get("project_id") else None
     return {
         "state": state_at(ev, t),
         "readings": [r for r in ev.readings if r["tick"] <= t],
         "timeline": ev.timeline[: t + 1],
         "ledger": core_upto(ev, t),
         "explanations": explanations_upto(ev, t),
+        "cascade": cascade_upto(ev, t, load_registry(project)) if project and project.evidence_panels == "extended" else [],
     }
 
 

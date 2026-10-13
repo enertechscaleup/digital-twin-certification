@@ -1,9 +1,17 @@
 {
   "name": "amr_wear_to_nullified",
+  "label": "Synthetic data. AMR 1's drive wheels wear until its twin is nullified; no recalibration.",
   "description": "Fulfilment cell (synthetic data). AMR 1's drive wheels wear from tick 5, fast-forwarded (1 tick = 24 operational hours). Its travel speed and tote deliveries gaps widen past 5% (Flagged territory) and then past 10% (Nullified territory); the pick station's arrivals from AMR 1 fall below their assured range. No recalibration.",
   "ticks": 60,
   "operational_hours_per_tick": 24,
   "wear": [
-    {"twin_type": "amr1", "start_tick": 5, "pct_per_1000_hours": {"speed": -20, "deliveries": -20}}
+    {
+      "twin_type": "amr1",
+      "start_tick": 5,
+      "pct_per_1000_hours": {
+        "speed": -20,
+        "deliveries": -20
+      }
+    }
   ]
 }

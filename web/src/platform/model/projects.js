@@ -1,5 +1,5 @@
-// Platform-wide constants, shared helpers for any project in the screens' shape,
-// and the preview-only AMR project. Real projects come from the evidence API
+// Platform-wide constants and shared helpers for any project in the screens' shape.
+// Real projects come from the evidence API
 // (api.js, toViewProject); their configuration lives in projects/*.json.
 
 export const TWIN_MODES = {
@@ -18,68 +18,10 @@ export const GAP_METRIC = {
 // Platform-wide escalation protocol (engine/protocol.py). Read-only for projects.
 export const ESCALATION = { flag_after: 3, nullify_after: 10, nullify_multiple: 2, spike_pct: 20, stuck_readings: 3 }
 
-const ch = (id, name, unit, direction, min, max, tolerance_pct = 5) =>
-  ({ id, name, unit, direction, assured_range: [min, max], tolerance_pct })
 
-// Preview only: AMR has no engine evidence yet, so this project renders from mock data
-// (model/mockRun.js) and is labelled as a preview wherever it appears.
-export const AMR = {
-  project_id: 'amr-fulfilment-cell',
-  preview: true,
-  name: 'Fulfilment cell',
-  domain: 'Warehousing & robotics',
-  summary: 'A fleet dispatcher assigns tasks to two autonomous mobile robots, which deliver totes to one pick station.',
-  data: 'mock',
-  gap: { metric: GAP_METRIC.id },
-  twins: [
-    {
-      key: 'dispatcher', name: 'Fleet dispatcher', role: 'controller', owner: 'Synthetic vendor C', registry_id: 'vendor-c/fleetflow', asset_kind: 'fleet_dispatcher', twin_mode: 'observational',
-      operational_twin_id: 'dispatcher-op-001', design_twin_id: 'dispatcher-design',
-      channels: [
-        ch('order_rate', 'Order lines', 'lines/h', 'input', 300, 900),
-        ch('tasks_1', 'Tasks to AMR 1', 'tasks/h', 'output', 40, 110),
-        ch('tasks_2', 'Tasks to AMR 2', 'tasks/h', 'output', 40, 110),
-      ],
-    },
-    ...[1, 2].map((n) => ({
-      key: `amr${n}`, name: `AMR ${n}`, role: 'product', owner: 'Synthetic vendor D', registry_id: 'vendor-d/amr-600', asset_kind: 'amr', twin_mode: 'semi_autonomous',
-      operational_twin_id: `amr${n}-op-001`, design_twin_id: 'amr-design',
-      channels: [
-        ch('task_rate', 'Assigned tasks', 'tasks/h', 'input', 40, 110),
-        ch('battery', 'Battery voltage', 'V', 'input', 44, 52),
-        ch('payload', 'Payload', 'kg', 'input', 0, 600),
-        ch('speed', 'Travel speed', 'm/s', 'output', 1.2, 2.0),
-        ch('deliveries', 'Tote deliveries', 'totes/h', 'output', 40, 110),
-      ],
-    })),
-    {
-      key: 'pick', name: 'Pick station', role: 'product', owner: 'Synthetic vendor E', registry_id: 'vendor-e/ps-2', asset_kind: 'pick_station', twin_mode: 'observational',
-      operational_twin_id: 'pick-op-001', design_twin_id: 'pick-design',
-      channels: [
-        ch('arrivals_1', 'Tote arrivals, AMR 1', 'totes/h', 'input', 55, 110),
-        ch('arrivals_2', 'Tote arrivals, AMR 2', 'totes/h', 'input', 55, 110),
-        ch('pick_rate', 'Pick rate', 'picks/h', 'output', 300, 900),
-        ch('cycle_time', 'Cycle time', 's', 'output', 6, 14),
-      ],
-    },
-  ],
-  composition: {
-    system_twin: { name: 'Fulfilment cell', operational_twin_id: 'fulfilment-system-op-001' },
-    output_constituents: ['pick'],
-    connections: [
-      { from: ['dispatcher', 'tasks_1'], to: ['amr1', 'task_rate'], description: 'The dispatcher assigns tasks to AMR 1' },
-      { from: ['dispatcher', 'tasks_2'], to: ['amr2', 'task_rate'], description: 'The dispatcher assigns tasks to AMR 2' },
-      { from: ['amr1', 'deliveries'], to: ['pick', 'arrivals_1'], description: 'AMR 1 delivers totes to the pick station' },
-      { from: ['amr2', 'deliveries'], to: ['pick', 'arrivals_2'], description: 'AMR 2 delivers totes to the pick station' },
-    ],
-  },
-  runs: [
-    { id: 'drive_wear', name: 'Drive wear', ticks: 70,
-      mock: { fault: { twin: 'amr1', channels: { speed: 1, deliveries: 1 }, start: 14, ramp: 24, cap_pct: 26 } } },
-  ],
-}
-
-export const PREVIEW_PROJECTS = [AMR]
+// Preview projects render from mock data (model/mockRun.js) and are labelled as previews.
+// None are listed now: the fulfilment cell is a real project with engine evidence.
+export const PREVIEW_PROJECTS = []
 
 // -- helpers shared by every screen ------------------------------------
 

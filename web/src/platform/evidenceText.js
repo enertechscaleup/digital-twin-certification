@@ -86,3 +86,10 @@ export function summarize(e, who) {
     default: return e.entry_type
   }
 }
+
+/** Profile-2 AI explanations (they carry their cited entries), keyed by the entry they explain. */
+export function explanationsBySeq(items) {
+  const out = {}
+  for (const e of items) if (e.payload.cites) (out[e.payload.explains_ledger_seq] ||= []).push(e.payload)
+  return out
+}
