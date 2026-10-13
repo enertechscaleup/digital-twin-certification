@@ -91,9 +91,12 @@ recalibrate differently, the lineage branches.
 This runs at the initial build and after every accepted recalibration
 (`engine/composition.py`).
 
-1. **Test points.** A 5-level grid across the assured ranges of the system's
-   external inputs, meaning the inputs no connection feeds. For the compressor
-   train that is motor volt and current, and compressor flow: 125 points.
+1. **Test points.** A grid across the assured ranges of the system's external
+   inputs, meaning the inputs no connection feeds. The number of levels per input
+   is a project setting (`composition.test_levels`, default 5). For the compressor
+   train that is 5 levels over motor volt and current and compressor flow: 5³ =
+   125 points. The Fulfilment cell has five external inputs (order rate, and each
+   robot's battery voltage and speed setpoint) and uses 3 levels: 3⁵ = 243 points.
 2. **Joint run.** The twins are queried in processing order. A connected input
    gets the upstream twin's *predicted* output, never a measurement. Every
    exchange is sealed.
@@ -122,7 +125,9 @@ recalibrated to its worn condition, the interface check fails: the motor's
 predicted speed, 1125–1346 rpm, leaves the compressor's assured 1250–1600 rpm
 at 75 of 125 points. The interaction check passes on the 50 points where the
 interface holds. So the system is not re-assured, for a specific and named
-reason.
+reason. The Fulfilment cell shows the same pattern: after AMR 1 is recalibrated,
+its predicted deliveries, 29.40–107.05 totes/h, leave the pick station's assured
+33.5–125 totes/h at 27 of 243 points (`docs/fulfilment-cell.md`).
 
 ## Checks
 
@@ -141,13 +146,19 @@ the exchange file alone, that:
 
 ## Evidence recorded before lineage
 
-The three locked runs have no version entries and no exchange file. They pass
-every other check and are labelled **pre-fingerprint evidence**. They are not
-rewritten.
+All six runs the app serves today, three per project, were recorded with
+lineage: they carry version entries and an exchange file, and pass the lineage
+check.
 
-`tests/test_lineage.py` proves that, for each locked scenario, the current engine
-produces byte-identical readings and per-tick status timelines. That holds with
-the vendor boundary, lineage and joint tests in place. The record grew; no
+The compressor train's first three runs were recorded before lineage existed.
+They have no version entries and no exchange file, and remain in the evidence
+bucket under their original head hashes, unchanged. They are no longer pinned.
+The app still accepts evidence of that kind: it passes every other check and is
+labelled **pre-fingerprint evidence**.
+
+`tests/test_lineage.py` proves that, for each of those scenarios, the current
+engine produces byte-identical readings and per-tick status timelines. That holds
+with the vendor boundary, lineage and joint tests in place. The record grew; no
 decision changed.
 
 ## Extension point: runtime swap detection (designed, not built)

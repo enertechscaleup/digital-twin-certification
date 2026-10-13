@@ -219,6 +219,9 @@ export function TraceChart({ W = 340, H = 128, xMin = 0, xMax, yMin, yMax, serie
     return { ...s, segs }
   })
   const ticksY = [yMin, (yMin + yMax) / 2, yMax]
+  // A label sits just above its line; when a higher labelled line is within 12 px, it moves below.
+  const crowded = (h, i) => h.label && hlines.some((o, j) => j !== i && o.label && Math.abs(clampY(o.y) - clampY(h.y)) < 12
+    && (o.y > h.y || (o.y === h.y && j > i)))
   return (
     <div className="chart">
       <svg viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
@@ -239,7 +242,7 @@ export function TraceChart({ W = 340, H = 128, xMin = 0, xMax, yMin, yMax, serie
         {hlines.map((h, i) => (
           <g key={`h${i}`}>
             <line x1={h.x0 != null ? x(h.x0) : L} x2={W - R} y1={clampY(h.y)} y2={clampY(h.y)} stroke={h.color} strokeWidth="1.1" strokeDasharray={h.dash ?? '4 3'} />
-            {h.label && <text x={W - R - 2} y={clampY(h.y) - 3} textAnchor="end" style={{ fill: h.color, fontWeight: 800 }}>{h.label}</text>}
+            {h.label && <text x={W - R - 2} y={clampY(h.y) + (crowded(h, i) ? 10 : -3)} textAnchor="end" style={{ fill: h.color, fontWeight: 800 }}>{h.label}</text>}
           </g>
         ))}
         {paths.map((s, i) => s.segs.map((seg, j) => (
