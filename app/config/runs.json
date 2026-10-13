@@ -19,6 +19,24 @@
       "title": "Fault types showcase",
       "core_ledger_head_hash": "f48b3e89b3ead0dc40dfd9be48d1d0ae9dc23de228a6089b4a88466c7feac028",
       "project_id": "oil-gas-compressor-train"
+    },
+    {
+      "run": "assurance-amr_full_cycle-seed42",
+      "title": "Full assurance cycle",
+      "core_ledger_head_hash": "466d5d1f9634378c7aea52b5e17ebb7d70f532e6225509a2b05db65817fb3a11",
+      "project_id": "amr-fulfilment-cell"
+    },
+    {
+      "run": "assurance-amr_wear_to_nullified-seed42",
+      "title": "Wear to nullified",
+      "core_ledger_head_hash": "8b0c335b3c3677d99c6879eac649e6300f7f3eaddeb2aeaa30c5872b11ecc843",
+      "project_id": "amr-fulfilment-cell"
+    },
+    {
+      "run": "assurance-amr_faults_showcase-seed42",
+      "title": "Fault types showcase",
+      "core_ledger_head_hash": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125",
+      "project_id": "amr-fulfilment-cell"
     }
   ]
 }

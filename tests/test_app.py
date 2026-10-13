@@ -41,6 +41,7 @@ def build_pack(directory: Path) -> str:
     sup.close()
     head = write_manifest(directory, RUN, "demo_full_cycle")["core_ledger_head_hash"]
     cfg = load_runs_config()
+    cfg["runs"] = [row for row in cfg["runs"] if row["project_id"] == "oil-gas-compressor-train"]
     for row in cfg["runs"]:
         if row["run"] == RUN:
             row["core_ledger_head_hash"] = head

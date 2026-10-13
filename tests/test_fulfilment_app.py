@@ -20,7 +20,10 @@ ROOT = Path(__file__).resolve().parent.parent
 PINNED = {"assurance-demo_full_cycle-seed42": "f8a4f238a88a7161ae71eacb85e36f436a42f8797db9ec04cd63e31caee3e27e",
           "assurance-demo_wear_to_nullified-seed42": "8568b4a5491bbb2fcfd53cd7d1ae86aee7c8211986f053f211de5e14fc869708",
           "assurance-faults_showcase-seed42": "f48b3e89b3ead0dc40dfd9be48d1d0ae9dc23de228a6089b4a88466c7feac028"}
-MOCK_NAMES = ("FleetFlow", "fleetflow", "BeltLine", "beltline", "AMR-600", "amr-600", "PS-2 pick", "vendor-e/ps-2")
+CELL_PINNED = {"assurance-amr_full_cycle-seed42": "466d5d1f9634378c7aea52b5e17ebb7d70f532e6225509a2b05db65817fb3a11",
+               "assurance-amr_wear_to_nullified-seed42": "8b0c335b3c3677d99c6879eac649e6300f7f3eaddeb2aeaa30c5872b11ecc843",
+               "assurance-amr_faults_showcase-seed42": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125"}
+MOCK_NAMES =("FleetFlow", "fleetflow", "BeltLine", "beltline", "AMR-600", "amr-600", "PS-2 pick", "vendor-e/ps-2")
 
 
 class TestBothProjects(unittest.TestCase):
@@ -110,7 +113,12 @@ class TestBothProjects(unittest.TestCase):
         self.assertIn("export const PREVIEW_PROJECTS = []", projects)
 
     def test_the_compressor_train_is_served_as_before(self):
-        self.assertEqual({r["run"]: r["core_ledger_head_hash"] for r in load_runs_config_from_repo()["runs"]}, PINNED)
+        cfg = load_runs_config_from_repo()
+        pins = lambda pid: {r["run"]: r["core_ledger_head_hash"] for r in cfg["runs"] if r["project_id"] == pid}
+        self.assertEqual(pins("oil-gas-compressor-train"), PINNED)
+        self.assertEqual([r["run"] for r in cfg["runs"][:3]], list(PINNED))  # first, in their original order
+        self.assertEqual(cfg["default"], "assurance-demo_full_cycle-seed42")
+        self.assertEqual(pins("amr-fulfilment-cell"), CELL_PINNED)
         self.assertEqual(self.client.get("/").status_code, 200)
         detail = self.get("/api/projects/oil-gas-compressor-train")
         self.assertEqual(detail["entry_twins"], ["motor-op-001"])
