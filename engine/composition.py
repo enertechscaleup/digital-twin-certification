@@ -6,7 +6,8 @@ independent. So before the system twin is assured, and again after any accepted
 recalibration, the platform orchestrates a joint run:
 
 1. Test points: a grid across the assured ranges of the system's external inputs (the
-   inputs no connection feeds).
+   inputs no connection feeds), at the project's number of levels per input (5 unless
+   the project file sets ``composition.test_levels``).
 2. Joint run: each twin is queried in processing order; a connected input receives the
    upstream twin's PREDICTED output, never a measurement. Every exchange is recorded.
 3. Interface check: every upstream predicted output must land inside the downstream
@@ -32,7 +33,6 @@ from engine.readings import gap_pct, is_valid_number
 from engine.registry import Registry
 
 METHOD = "joint-test/1"
-LEVELS = 5
 RULE = ("interface: every upstream predicted output inside the downstream twin's assured input range; "
         "interaction: at points where every interface holds, the joint prediction of each system output "
         "within its output twin's tolerance against the combined test bench")
@@ -47,10 +47,11 @@ def external_inputs(registry: Registry) -> list[tuple[str, str]]:
 
 def test_points(registry: Registry) -> list[dict]:
     """Each point: {"<twin>/<channel>": value} for every external input."""
+    levels = registry.system.test_levels
     axes = []
     for t, ch in external_inputs(registry):
         c = next(c for c in registry.products[t].inputs if c.channel_id == ch)
-        axes.append([c.env_min + i * (c.env_max - c.env_min) / (LEVELS - 1) for i in range(LEVELS)])
+        axes.append([c.env_min + i * (c.env_max - c.env_min) / (levels - 1) for i in range(levels)])
     keys = [f"{t}/{ch}" for t, ch in external_inputs(registry)]
     return [dict(zip(keys, combo)) for combo in itertools.product(*axes)]
 
@@ -122,7 +123,7 @@ class CompositionTester:
             **({"tick": tick} if tick is not None else {}),
             "system_twin_id": sys.design_system_twin_id if stage == "design" else sys.operational_system_twin_id,
             "system_ref": system_ref, "constituent_refs": self.lineage.constituent_refs(assurance_ids, stage),
-            "external_inputs": [f"{t}/{ch}" for t, ch in external_inputs(reg)], "levels": LEVELS,
+            "external_inputs": [f"{t}/{ch}" for t, ch in external_inputs(reg)], "levels": reg.system.test_levels,
             "points": len(points), "test_inputs_sha256": sha256_hex(points), "exchange": seal,
             "bench_samples": len(samples), "bench_readings_sha256": sha256_hex(samples),
             "interface": {"passed": interface_ok, "connections": interface},

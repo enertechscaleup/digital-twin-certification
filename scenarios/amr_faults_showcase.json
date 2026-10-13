@@ -1,0 +1,14 @@
+{
+  "name": "amr_faults_showcase",
+  "description": "Fulfilment cell (synthetic data). One input outside its assured range, then three kinds of sensor data-quality fault: order lines forced above the dispatcher's assured range for five ticks; AMR 1's battery-voltage reading stuck; AMR 2's wheel-odometry speed reading dropping out; a spike in the pick station's cycle-time reading.",
+  "ticks": 45,
+  "operational_hours_per_tick": 24,
+  "envelope_violations": [
+    {"twin_type": "dispatcher", "channel": "order_rate", "start_tick": 10, "duration_ticks": 5, "value": 930}
+  ],
+  "data_quality": [
+    {"twin_type": "pick_station", "channel": "cycle_time", "start_tick": 20, "duration_ticks": 1, "kind": "spike", "factor": 1.5},
+    {"twin_type": "amr2", "channel": "speed", "start_tick": 25, "duration_ticks": 2, "kind": "dropout"},
+    {"twin_type": "amr1", "channel": "battery", "start_tick": 30, "duration_ticks": 6, "kind": "stuck"}
+  ]
+}

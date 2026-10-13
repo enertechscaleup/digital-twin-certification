@@ -3,7 +3,8 @@
 Method: fit one multiplicative correction per output channel, in order, to
 the most recent ``fit_last_ticks`` of the data released, scaling that output's
 parameter group. Where one output's formula depends on an earlier output
-(motor vibration on speed; compressor temperature on pressure), the owner
+(motor vibration on speed; compressor temperature on pressure; a mobile robot's
+deliveries on its travel speed), the owner
 knows that dependence is on the machine's as-designed behaviour, so the
 earlier correction is undone inside that term before the later output is
 fitted. Without this, a single correction factor fitted at one operating
@@ -24,6 +25,10 @@ PARAM_GROUPS = {
               "vibration": ("vib_base", "vib_per_rpm_sq", "vib_per_amp")},
     "compressor": {"pressure": ("p_base", "p_per_rpm", "p_per_flow"),
                    "temperature": ("t_ambient", "t_per_bar", "t_per_flow")},
+    "dispatcher": {"tasks_1": ("t1_base", "t1_per_line"), "tasks_2": ("t2_base", "t2_per_line")},
+    "amr1": {"speed": ("s_gain", "s_per_volt", "s_per_task"), "deliveries": ("d_base", "d_per_speed")},
+    "amr2": {"speed": ("s_gain", "s_per_volt", "s_per_task"), "deliveries": ("d_base", "d_per_speed")},
+    "pick_station": {"pick_rate": ("picks_per_tote",), "cycle_time": ("c_base", "c_per_tote")},
 }
 
 
@@ -32,6 +37,8 @@ PARAM_GROUPS = {
 COUPLED_TERMS = {
     "motor": {"vib_per_rpm_sq": ("speed", 2)},
     "compressor": {"t_per_bar": ("pressure", 1)},
+    "amr1": {"d_per_speed": ("speed", 1)},
+    "amr2": {"d_per_speed": ("speed", 1)},
 }
 
 

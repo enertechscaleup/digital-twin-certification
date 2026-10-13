@@ -23,6 +23,10 @@ SCHEMA_VERSION = 1
 GAP_METRICS = ("relative_pct_of_prediction",)
 TWIN_MODES = ("observational", "semi_autonomous")
 ROLES = ("product", "controller")
+# The joint composition test's grid: levels per external input (engine/composition.py).
+DEFAULT_TEST_LEVELS = 5
+# Which view a project opens in: its entry twins alone, or the whole system.
+OPENS_IN = ("entry", "system")
 
 
 class ProjectError(ValueError):
@@ -57,6 +61,8 @@ class Project:
     operational_system_twin_id: str
     output_constituents: tuple[str, ...]
     connections: tuple[dict, ...]
+    test_levels: int = DEFAULT_TEST_LEVELS
+    opens_in: str = "entry"
 
     @property
     def processing_order(self) -> tuple[str, ...]:
@@ -145,6 +151,12 @@ def load_project(path: Path | str = DEFAULT_PROJECT) -> Project:
     for key in ("design_system_twin_id", "operational_system_twin_id"):
         if not comp.get(key):
             issues.append(f"composition is missing {key}")
+    levels = comp.get("test_levels", DEFAULT_TEST_LEVELS)
+    if not (isinstance(levels, int) and not isinstance(levels, bool) and levels >= 2):
+        issues.append("composition test_levels must be a whole number of at least 2")
+    opens_in = raw.get("view", {}).get("opens_in", "entry")
+    if opens_in not in OPENS_IN:
+        issues.append(f"view opens_in must be one of {', '.join(OPENS_IN)}")
     for t, tw in twins.items():
         legacy = tw.config.get("linked_inputs")
         if legacy is not None and legacy != _linked_from(connections, t):
@@ -161,7 +173,7 @@ def load_project(path: Path | str = DEFAULT_PROJECT) -> Project:
         summary=raw.get("summary", ""), gap_metric=metric, twins=tuple(twins[t] for t in order),
         system_name=comp.get("name", raw["name"]), system_description=comp.get("description", ""),
         design_system_twin_id=comp["design_system_twin_id"], operational_system_twin_id=comp["operational_system_twin_id"],
-        output_constituents=outputs, connections=connections,
+        output_constituents=outputs, connections=connections, test_levels=levels, opens_in=opens_in,
     )
 
 

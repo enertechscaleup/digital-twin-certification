@@ -1,4 +1,4 @@
-"""Made-up formulas for the two synthetic machines.
+"""Made-up formulas for the synthetic machines.
 
 Every machine is described twice:
 
@@ -34,9 +34,35 @@ def _compressor(inputs: Inputs, p: dict[str, float]) -> Outputs:
     return {"pressure": pressure, "temperature": temperature}
 
 
+def _dispatcher(inputs: Inputs, p: dict[str, float]) -> Outputs:
+    # A fleet dispatcher splits incoming order lines into tasks for each robot.
+    return {"tasks_1": p["t1_base"] + p["t1_per_line"] * inputs["order_rate"],
+            "tasks_2": p["t2_base"] + p["t2_per_line"] * inputs["order_rate"]}
+
+
+def _amr(inputs: Inputs, p: dict[str, float]) -> Outputs:
+    # An autonomous mobile robot: travel speed follows its speed setpoint, scaled by battery
+    # voltage and slowed slightly by its task load; the share of tasks delivered rises with speed.
+    speed = (inputs["speed_setpoint"] * (p["s_gain"] + p["s_per_volt"] * (inputs["battery"] - 48.0))
+             - p["s_per_task"] * inputs["task_rate"])
+    deliveries = inputs["task_rate"] * (p["d_base"] + p["d_per_speed"] * speed)
+    return {"speed": speed, "deliveries": deliveries}
+
+
+def _pick_station(inputs: Inputs, p: dict[str, float]) -> Outputs:
+    totes = inputs["arrivals_1"] + inputs["arrivals_2"]
+    return {"pick_rate": p["picks_per_tote"] * totes,
+            "cycle_time": p["c_base"] - p["c_per_tote"] * totes}
+
+
 FORMULAS: dict[str, Callable[[Inputs, dict[str, float]], Outputs]] = {
     "motor": _motor,
     "compressor": _compressor,
+    "dispatcher": _dispatcher,
+    # Two robots of the same model: two twins, one formula.
+    "amr1": _amr,
+    "amr2": _amr,
+    "pick_station": _pick_station,
 }
 
 # Each formula's declared identifier, sealed into every twin version's fingerprint. Changing
@@ -45,12 +71,22 @@ FORMULAS: dict[str, Callable[[Inputs, dict[str, float]], Outputs]] = {
 FORMULA_IDS: dict[str, str] = {
     "motor": "synthetic-motor/1",
     "compressor": "synthetic-compressor/1",
+    "dispatcher": "synthetic-dispatcher/1",
+    "amr1": "synthetic-amr/1",
+    "amr2": "synthetic-amr/1",
+    "pick_station": "synthetic-pick-station/1",
 }
 
 OUTPUT_CHANNELS: dict[str, tuple[str, ...]] = {
     "motor": ("speed", "vibration"),
     "compressor": ("pressure", "temperature"),
+    "dispatcher": ("tasks_1", "tasks_2"),
+    "amr1": ("speed", "deliveries"),
+    "amr2": ("speed", "deliveries"),
+    "pick_station": ("pick_rate", "cycle_time"),
 }
+
+_AMR_PARAMS = {"s_gain": 0.98, "s_per_volt": 0.01, "s_per_task": 0.001, "d_base": 0.35, "d_per_speed": 0.45}
 
 DEFAULT_PARAMS: dict[str, dict[str, float]] = {
     "motor": {
@@ -68,6 +104,10 @@ DEFAULT_PARAMS: dict[str, dict[str, float]] = {
         "t_per_bar": 9.0,
         "t_per_flow": 0.3,
     },
+    "dispatcher": {"t1_base": 10.0, "t1_per_line": 0.1, "t2_base": 12.0, "t2_per_line": 0.095},
+    "amr1": dict(_AMR_PARAMS),
+    "amr2": dict(_AMR_PARAMS),
+    "pick_station": {"picks_per_tote": 4.6, "c_base": 12.0, "c_per_tote": 0.03},
 }
 
 

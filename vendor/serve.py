@@ -3,6 +3,7 @@
     python -m vendor.serve                       # motor on 9101, compressor on 9102
     python -m engine run --scenario scenarios/demo_full_cycle.json \\
         --vendor motor=http://127.0.0.1:9101/ --vendor compressor=http://127.0.0.1:9102/
+    python -m vendor.serve --project projects/fulfilment_cell.json --first-port 9201
 
 Each endpoint answers the platform's JSON requests (engine/boundary.py) and keeps
 its twin's formula and parameters to itself. These stand in for owners' own
@@ -15,6 +16,7 @@ import argparse
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from projects import DEFAULT_PROJECT, load_project
 from vendor.endpoint import VendorEndpoint, simulated_endpoints
 
 
@@ -38,9 +40,10 @@ def handler_for(endpoint: VendorEndpoint) -> type[BaseHTTPRequestHandler]:
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m vendor.serve", description=__doc__.splitlines()[0])
     parser.add_argument("--first-port", type=int, default=9101)
+    parser.add_argument("--project", default=str(DEFAULT_PROJECT), help="project file (default: the compressor train)")
     args = parser.parse_args()
     servers = []
-    for i, (twin, endpoint) in enumerate(simulated_endpoints().items()):
+    for i, (twin, endpoint) in enumerate(simulated_endpoints(load_project(args.project)).items()):
         server = ThreadingHTTPServer(("127.0.0.1", args.first_port + i), handler_for(endpoint))
         servers.append(server)
         threading.Thread(target=server.serve_forever, daemon=True).start()

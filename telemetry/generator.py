@@ -204,7 +204,9 @@ class TelemetryGenerator:
                         if (twin_type, ch) in self.setpoints:
                             true_in[ch] = self.setpoints[(twin_type, ch)] + jitter
                         else:
-                            true_in[ch] = p["nominal"] + p["swing"] * math.sin(2 * math.pi * tick / p["period_ticks"]) + jitter
+                            # An optional phase shifts where the profile's cycle starts (ticks).
+                            t = tick + p["phase_ticks"] if "phase_ticks" in p else tick
+                            true_in[ch] = p["nominal"] + p["swing"] * math.sin(2 * math.pi * t / p["period_ticks"]) + jitter
                     for ev in scenario.envelope_violations:
                         if ev.twin_type == twin_type and ev.channel == ch and ev.active(tick):
                             # Real operation is never perfectly steady: jitter around the forced value.

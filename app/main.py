@@ -137,7 +137,8 @@ def registry() -> dict:
             if not tw.registry_id:
                 continue
             if tw.registry_id in entries:
-                entries[tw.registry_id]["used_by"].append(p.project_id)
+                if p.project_id not in entries[tw.registry_id]["used_by"]:
+                    entries[tw.registry_id]["used_by"].append(p.project_id)
                 continue
             cfg = tw.config
             entries[tw.registry_id] = {

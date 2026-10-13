@@ -1,0 +1,24 @@
+{
+  "twin_type": "amr1",
+  "description": "Synthetic autonomous mobile robot product twin (AMR 1): travel speed and tote deliveries from assigned tasks, battery voltage and speed setpoint. Illustrative only -- the formulas are made up for demonstration and make no engineering claim.",
+  "design_twin_id": "amr1-design",
+  "operational_twin_id": "amr1-op-001",
+  "asset_id": "amr1-asset-001",
+  "vendor": "synthetic-vendor-d",
+  "twin_mode": "semi_autonomous",
+  "tick_seconds": 2,
+  "channels": [
+    {"channel_id": "task_rate",      "name": "Assigned tasks",  "unit": "tasks/h", "direction": "input",  "envelope": {"min": 38,  "max": 110}, "tolerance_pct": 5},
+    {"channel_id": "battery",        "name": "Battery voltage", "unit": "V",       "direction": "input",  "envelope": {"min": 44,  "max": 52},  "tolerance_pct": 5},
+    {"channel_id": "speed_setpoint", "name": "Speed setpoint",  "unit": "m/s",     "direction": "input",  "envelope": {"min": 1.2, "max": 2.0}, "tolerance_pct": 5},
+    {"channel_id": "speed",          "name": "Travel speed",    "unit": "m/s",     "direction": "output", "envelope": {"min": 1.0, "max": 2.1}, "tolerance_pct": 5},
+    {"channel_id": "deliveries",     "name": "Tote deliveries", "unit": "totes/h", "direction": "output", "envelope": {"min": 30,  "max": 140}, "tolerance_pct": 5}
+  ],
+  "operating_profile": {
+    "battery":        {"nominal": 48,  "swing": 3, "period_ticks": 60, "jitter": 0.15},
+    "speed_setpoint": {"nominal": 1.3, "swing": 0, "period_ticks": 1,  "jitter": 0.004}
+  },
+  "physical_noise_pct": 1.0,
+  "out_of_envelope_divergence_pct_per_span": 10,
+  "physical_bias_pct": {"speed": 0.3, "deliveries": -0.3}
+}

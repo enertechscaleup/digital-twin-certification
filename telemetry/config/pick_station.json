@@ -1,0 +1,20 @@
+{
+  "twin_type": "pick_station",
+  "description": "Synthetic pick station product twin: pick rate and cycle time from tote arrivals delivered by two mobile robots. Illustrative only -- the formulas are made up for demonstration and make no engineering claim.",
+  "design_twin_id": "pick-design",
+  "operational_twin_id": "pick-op-001",
+  "asset_id": "pick-asset-001",
+  "vendor": "synthetic-vendor-e",
+  "twin_mode": "observational",
+  "tick_seconds": 2,
+  "channels": [
+    {"channel_id": "arrivals_1", "name": "Tote arrivals, AMR 1", "unit": "totes/h", "direction": "input",  "envelope": {"min": 33.5, "max": 125},  "tolerance_pct": 5},
+    {"channel_id": "arrivals_2", "name": "Tote arrivals, AMR 2", "unit": "totes/h", "direction": "input",  "envelope": {"min": 33.5, "max": 125},  "tolerance_pct": 5},
+    {"channel_id": "pick_rate",  "name": "Pick rate",            "unit": "picks/h", "direction": "output", "envelope": {"min": 300,  "max": 1160}, "tolerance_pct": 5},
+    {"channel_id": "cycle_time", "name": "Cycle time",           "unit": "s",       "direction": "output", "envelope": {"min": 4.4,  "max": 10.1}, "tolerance_pct": 5}
+  ],
+  "operating_profile": {},
+  "physical_noise_pct": 1.0,
+  "out_of_envelope_divergence_pct_per_span": 10,
+  "physical_bias_pct": {"pick_rate": 0.3, "cycle_time": -0.3}
+}

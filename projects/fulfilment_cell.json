@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "project_id": "amr-fulfilment-cell",
+  "name": "Fulfilment cell",
+  "domain": "Warehousing & robotics",
+  "summary": "A fleet dispatcher assigns tasks to two autonomous mobile robots, which deliver totes to one pick station. Four independently owned twins, composed into one system twin.",
+  "gap": {"metric": "relative_pct_of_prediction"},
+  "view": {"opens_in": "system"},
+  "twins": [
+    {"twin_type": "dispatcher", "config": "../telemetry/config/dispatcher.json", "name": "Fleet dispatcher", "role": "controller",
+     "registry_id": "vendor-c/dispatch-d1", "asset_kind": "fleet_dispatcher"},
+    {"twin_type": "amr1", "config": "../telemetry/config/amr1.json", "name": "AMR 1", "role": "product",
+     "registry_id": "vendor-d/robot-r2", "asset_kind": "amr"},
+    {"twin_type": "amr2", "config": "../telemetry/config/amr2.json", "name": "AMR 2", "role": "product",
+     "registry_id": "vendor-d/robot-r2", "asset_kind": "amr"},
+    {"twin_type": "pick_station", "config": "../telemetry/config/pick_station.json", "name": "Pick station", "role": "product",
+     "registry_id": "vendor-e/pick-p4", "asset_kind": "pick_station"}
+  ],
+  "composition": {
+    "name": "Fulfilment cell",
+    "description": "The fulfilment cell: the dispatcher assigns tasks to both robots, and both robots deliver totes to the pick station. The system's own outputs are the pick station's outputs.",
+    "design_system_twin_id": "fulfilment-system-design",
+    "operational_system_twin_id": "fulfilment-system-op-001",
+    "output_constituents": ["pick_station"],
+    "test_levels": 3,
+    "connections": [
+      {"from_twin": "dispatcher", "from_channel": "tasks_1", "to_twin": "amr1", "to_channel": "task_rate",
+       "description": "the dispatcher assigns tasks to AMR 1"},
+      {"from_twin": "dispatcher", "from_channel": "tasks_2", "to_twin": "amr2", "to_channel": "task_rate",
+       "description": "the dispatcher assigns tasks to AMR 2"},
+      {"from_twin": "amr1", "from_channel": "deliveries", "to_twin": "pick_station", "to_channel": "arrivals_1",
+       "description": "AMR 1 delivers totes to the pick station"},
+      {"from_twin": "amr2", "from_channel": "deliveries", "to_twin": "pick_station", "to_channel": "arrivals_2",
+       "description": "AMR 2 delivers totes to the pick station"}
+    ]
+  }
+}

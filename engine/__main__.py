@@ -2,6 +2,7 @@
 
     python -m engine run --scenario scenarios/demo_wear_to_nullified.json
     python -m engine run --scenario ... --vendor motor=http://localhost:9101 --vendor compressor=http://localhost:9102
+    python -m engine run --project projects/fulfilment_cell.json --scenario scenarios/amr_full_cycle.json
     python -m engine verify-ledger data/<run>.ledger.jsonl
     python -m engine register-twins [--project projects/<project>.json]
 """
@@ -33,12 +34,12 @@ def code_commit() -> str | None:
     return head + ("-dirty" if dirty else "")
 
 
-def vendors(urls: list[str]) -> dict:
+def vendors(urls: list[str], project=None) -> dict:
     """A connection to each twin owner's endpoint: simulated in process, or over HTTP for any
     ``twin=url`` given (python -m vendor.serve). The engine itself never imports the vendor side."""
     from engine.boundary import HttpConnection
     from vendor.endpoint import simulated_vendors
-    out = simulated_vendors()
+    out = simulated_vendors(project)
     for spec in urls or []:
         twin, url = spec.split("=", 1)
         out[twin] = HttpConnection(url)
@@ -50,8 +51,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     start = datetime.fromisoformat(args.start_time.replace("Z", "+00:00")) if args.start_time else None
     stem = f"assurance-{raw['name']}-seed{args.seed}"
     ledger_path = args.out / f"{stem}.ledger.jsonl"
-    result = run_assurance(Scenario.from_dict(raw), vendors(args.vendor), seed=args.seed, start_time=start,
-                           ledger_path=ledger_path, code_commit=code_commit())
+    project = load_project(args.project)
+    result = run_assurance(Scenario.from_dict(raw), vendors(args.vendor, project), seed=args.seed, start_time=start,
+                           ledger_path=ledger_path, project=project, code_commit=code_commit())
     write_jsonl(result.timeline, args.out / f"{stem}.timeline.jsonl")
     write_jsonl(result.readings, args.out / f"{stem}.readings.jsonl")
     ExchangeLog.write_records(result.exchange, args.out / f"{stem}.exchange.jsonl")
@@ -139,6 +141,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     r = sub.add_parser("run", help="assure the twins and monitor a scenario's field stream")
     r.add_argument("--scenario", type=Path, required=True)
+    r.add_argument("--project", type=Path, default=DEFAULT_PROJECT, help="project file (default: the compressor train)")
     r.add_argument("--seed", type=int, default=42)
     r.add_argument("--start-time", default="2026-10-01T00:00:00Z", help="ISO timestamp for tick 0")
     r.add_argument("--out", type=Path, default=Path("data"))

@@ -55,6 +55,7 @@ class SystemTwin:
     constituents: tuple[str, ...]  # twin types
     output_constituents: tuple[str, ...]  # constituents whose outputs are the system's outputs
     connections: tuple[dict, ...] = ()  # which constituent output feeds which constituent input
+    test_levels: int = 5  # joint composition test: grid levels per external input
 
 
 @dataclass(frozen=True)
@@ -93,5 +94,6 @@ def load_registry(project: Project | None = None) -> Registry:
             constituents=p.processing_order,
             output_constituents=p.output_constituents,
             connections=p.connections,
+            test_levels=p.test_levels,
         ),
     )

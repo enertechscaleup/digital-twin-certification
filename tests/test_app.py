@@ -162,7 +162,10 @@ class TestDashboardApi(unittest.TestCase):
 
     def test_registry_lists_the_owners_declared_interfaces(self):
         entries = {e["registry_id"]: e for e in self.client.get("/api/registry").json()["entries"]}
-        self.assertEqual(set(entries), {"vendor-a/em-400", "vendor-b/rc-12"})
+        self.assertEqual(set(entries), {"vendor-a/em-400", "vendor-b/rc-12",
+                                        "vendor-c/dispatch-d1", "vendor-d/robot-r2", "vendor-e/pick-p4"})
+        # Both robots of the fulfilment cell are the same registered model: one entry, one project.
+        self.assertEqual(entries["vendor-d/robot-r2"]["used_by"], ["amr-fulfilment-cell"])
         motor = entries["vendor-a/em-400"]
         cfg = json.loads((ROOT / "telemetry" / "config" / "motor.json").read_text())
         self.assertEqual(motor["vendor"], cfg["vendor"])

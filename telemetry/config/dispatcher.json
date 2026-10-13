@@ -1,0 +1,21 @@
+{
+  "twin_type": "dispatcher",
+  "description": "Synthetic fleet dispatcher controller twin: splits incoming order lines into tasks for two mobile robots. Illustrative only -- the formulas are made up for demonstration and make no engineering claim.",
+  "design_twin_id": "dispatcher-design",
+  "operational_twin_id": "dispatcher-op-001",
+  "asset_id": "dispatcher-asset-001",
+  "vendor": "synthetic-vendor-c",
+  "twin_mode": "observational",
+  "tick_seconds": 2,
+  "channels": [
+    {"channel_id": "order_rate", "name": "Order lines",    "unit": "lines/h", "direction": "input",  "envelope": {"min": 300, "max": 900}, "tolerance_pct": 5},
+    {"channel_id": "tasks_1",    "name": "Tasks to AMR 1", "unit": "tasks/h", "direction": "output", "envelope": {"min": 40,  "max": 110}, "tolerance_pct": 5},
+    {"channel_id": "tasks_2",    "name": "Tasks to AMR 2", "unit": "tasks/h", "direction": "output", "envelope": {"min": 40,  "max": 110}, "tolerance_pct": 5}
+  ],
+  "operating_profile": {
+    "order_rate": {"nominal": 600, "swing": 290, "period_ticks": 150, "phase_ticks": 46.5, "jitter": 6}
+  },
+  "physical_noise_pct": 1.0,
+  "out_of_envelope_divergence_pct_per_span": 10,
+  "physical_bias_pct": {"tasks_1": 0.3, "tasks_2": -0.2}
+}

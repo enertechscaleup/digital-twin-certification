@@ -21,6 +21,41 @@
       "project_id": "oil-gas-compressor-train",
       "design_system_twin_id": "compressor-system-design",
       "registered": "2026-10-03"
+    },
+    {
+      "identity": "twn_zvm2nv2imwzbpvuk36ub",
+      "composition": "product",
+      "vendor": "synthetic-vendor-c",
+      "design_twin_id": "dispatcher-design",
+      "registered": "2026-10-13"
+    },
+    {
+      "identity": "twn_565h88fwapa4j4gqgnqe",
+      "composition": "product",
+      "vendor": "synthetic-vendor-d",
+      "design_twin_id": "amr1-design",
+      "registered": "2026-10-13"
+    },
+    {
+      "identity": "twn_vn2uadrxy5tzy4ity5nb",
+      "composition": "product",
+      "vendor": "synthetic-vendor-d",
+      "design_twin_id": "amr2-design",
+      "registered": "2026-10-13"
+    },
+    {
+      "identity": "twn_ez4ndx8ny8ssyedw585c",
+      "composition": "product",
+      "vendor": "synthetic-vendor-e",
+      "design_twin_id": "pick-design",
+      "registered": "2026-10-13"
+    },
+    {
+      "identity": "sys_r44376hchyw9euufqf4g",
+      "composition": "system",
+      "project_id": "amr-fulfilment-cell",
+      "design_system_twin_id": "fulfilment-system-design",
+      "registered": "2026-10-13"
     }
   ]
 }
