@@ -10,3 +10,6 @@ web/node_modules
 web/dist
 .gcloudignore
 video
+deck-assets
+.pytest_cache
+.DS_Store
