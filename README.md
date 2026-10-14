@@ -263,10 +263,12 @@ an earlier view.
 - 6 per minute and 60 per day per visitor;
 - 300 per hour per instance;
 - at most 8 tool rounds per question;
-- each model call waits at most 25 s per attempt, with at most one retry;
+- each model call waits at most 25 s per attempt. A timeout or a Gemini server error (HTTP 5xx) is
+  retried up to twice, after 1 s and then 2 s; client errors (4xx) are never retried;
 - no new model call starts once a question has used 200 s, and a call's timeout shrinks so it
-  cannot run past that. When a limit is reached, the assistant replies with a plain message
-  ("try a narrower question" or "please try again");
+  cannot run past that;
+- when a limit is reached, the assistant replies with a plain message that says which: too many
+  lookups, too long overall, Gemini did not answer in time, or Gemini returned a temporary error.
 - capped answer length.
 
 These limits apply to the live assistant only. The sealed-explanation pipeline uses its own client

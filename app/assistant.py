@@ -19,15 +19,20 @@ from explain.gemini import PINNED_LOCATION, PINNED_MODEL
 
 MAX_TOOL_ROUNDS = 8
 # Live assistant only (the sealed-explanation pipeline has its own client and no limits): each model
-# call waits at most CALL_TIMEOUT_S per attempt, with at most one retry, and no new call starts once
-# a question has used QUESTION_LIMIT_S. Per-attempt timeouts shrink so a call cannot run past it.
+# call waits at most CALL_TIMEOUT_S per attempt, with up to CALL_ATTEMPTS attempts (waits of 1 s, then
+# 2 s, between them) on a timeout or a 5xx, and no new call starts once a question has used
+# QUESTION_LIMIT_S. Per-attempt timeouts shrink so a call cannot run past it. 4xx errors (bad
+# request, auth, quota) are never retried. The SDK also sends the timeout to Vertex AI as a server
+# deadline, so an attempt that runs past it usually ends as HTTP 504 rather than a client timeout.
 CALL_TIMEOUT_S = 25.0
-CALL_ATTEMPTS = 2
-RETRY_WAIT_S = 0.5
+CALL_ATTEMPTS = 3
+RETRY_WAITS_S = (1.0, 2.0)
+RETRY_STATUS_CODES = [500, 502, 503, 504]
 QUESTION_LIMIT_S = 200.0
 MIN_ATTEMPT_S = 2.0
 TOO_SLOW = "the question took too long to answer from the evidence; try a narrower question"
-GEMINI_SLOW = "Gemini did not answer in time; please try again"
+GEMINI_SLOW = "Gemini did not answer in time. Please ask again in a moment."
+GEMINI_5XX = "Gemini returned a temporary error. Please ask again in a moment."
 log = logging.getLogger("twinevidence.assistant")
 _clock = time.monotonic
 _PROCESS_STARTED = time.monotonic()
@@ -45,21 +50,32 @@ def _log_model_call(chat, index: int, error: str | None = None) -> None:
     first, _first_model_call = _first_model_call, False
     c = getattr(chat, "last_call", None) or {}
     fmt = lambda v, f: "n/a" if v is None else f % v
-    attempts, failed = c.get("attempts"), c.get("attempt_errors")
-    timeouts = None if failed is None else sum("Timeout" in e for e in failed)
-    log.info("assistant model call %d: %s s, http attempts %s, sdk retried %s, timeouts %s, failed attempts %s, "
+    attempts, log_ = c.get("attempts"), c.get("attempt_log")
+    failed = None if log_ is None else [a for a in log_ if not a.startswith("ok")]
+    timeouts = None if failed is None else sum(_is_deadline(a) for a in failed)
+    log.info("assistant model call %d: %s s, http attempts %s, sdk retried %s, timeouts %s, attempts [%s], "
              "attempt timeout %s s, token %s s, error %s, first call on instance %s, instance age %.1f s",
              index, fmt(c.get("seconds"), "%.3f"), fmt(attempts, "%d"),
              "n/a" if attempts is None else ("yes" if attempts > 1 else "no"),
-             fmt(timeouts, "%d"), "n/a" if failed is None else (",".join(failed) or "none"),
+             fmt(timeouts, "%d"), "n/a" if log_ is None else ", ".join(log_),
              fmt(c.get("attempt_timeout_s"), "%.1f"), fmt(c.get("token_seconds"), "%.3f"),
              error or c.get("error") or "none", "yes" if first else "no", instance_age())
 
 
+def _is_deadline(outcome: str) -> bool:
+    """An attempt outcome ("Class/status") that means the time ran out: a client-side timeout, or the
+    server's 504 for the deadline the SDK sends with each attempt."""
+    return "Timeout" in outcome or outcome.endswith("/504")
+
+
+def _outcome(exc: Exception) -> str:
+    return f"{type(exc).__name__}/{getattr(exc, 'code', None) or '-'}"
+
+
 def attempt_timeout(remaining_s: float) -> float | None:
-    """Seconds per attempt so that both attempts (and the wait between them) fit in what is left of
-    the question's limit; None when too little is left to start a call."""
-    t = min(CALL_TIMEOUT_S, (remaining_s - RETRY_WAIT_S) / CALL_ATTEMPTS)
+    """Seconds per attempt so that every attempt (and the waits between them) fits in what is left
+    of the question's limit; None when too little is left to start a call."""
+    t = min(CALL_TIMEOUT_S, (remaining_s - sum(RETRY_WAITS_S)) / CALL_ATTEMPTS)
     return t if t >= MIN_ATTEMPT_S else None
 # Includes the model's thinking, which can use several hundred tokens before the answer.
 MAX_OUTPUT_TOKENS = 4000
@@ -109,7 +125,7 @@ class GeminiChat:
         self._config = self._config_for(TOOL_SCHEMAS)
         self.last_call: dict = {}
         self._attempts = 0
-        self._attempt_errors: list[str] = []
+        self._attempt_log: list[str] = []
         self._token_seconds = 0.0
         self._instrument()
         log.info("assistant client created in %.3f s (instance age %.1f s)", time.monotonic() - started, instance_age())
@@ -121,16 +137,18 @@ class GeminiChat:
         api = getattr(self._client, "_api_client", None)
         once, token = getattr(api, "_request_once", None), getattr(api, "_access_token", None)
         if not (callable(once) and callable(token)):
-            self._attempts = self._token_seconds = self._attempt_errors = None
+            self._attempts = self._token_seconds = self._attempt_log = None
             return
 
         def counted_once(*args, **kwargs):
             self._attempts += 1
             try:
-                return once(*args, **kwargs)
+                response = once(*args, **kwargs)
             except Exception as exc:
-                self._attempt_errors.append(type(exc).__name__)
+                self._attempt_log.append(_outcome(exc))
                 raise
+            self._attempt_log.append("ok/200")
+            return response
 
         def timed_token(*args, **kwargs):
             t0 = time.monotonic()
@@ -166,11 +184,13 @@ class GeminiChat:
             self.types.Part.from_function_response(name=n, response=r) for n, r in results])
 
     def request_options(self, timeout_s: float):
-        """This call's own HTTP options: a timeout per attempt and at most one retry (on a timeout,
-        a dropped connection, or HTTP 408/429/5xx). Set per request, never on the client."""
+        """This call's own HTTP options: a timeout per attempt, and up to CALL_ATTEMPTS attempts on a
+        timeout, a dropped connection or HTTP 500/502/503/504, never on a 4xx. Waits grow 1 s, 2 s.
+        Set per request, never on the client."""
         t = self.types
         return t.HttpOptions(timeout=int(timeout_s * 1000), retry_options=t.HttpRetryOptions(
-            attempts=CALL_ATTEMPTS, initial_delay=RETRY_WAIT_S, max_delay=RETRY_WAIT_S, jitter=0.001))
+            attempts=CALL_ATTEMPTS, initial_delay=RETRY_WAITS_S[0], max_delay=RETRY_WAITS_S[-1], exp_base=2,
+            jitter=0.001, http_status_codes=RETRY_STATUS_CODES))
 
     def generate(self, contents: list, tools: list[dict] | None = None, timeout_s: float = CALL_TIMEOUT_S):
         """Returns (model_content, function_calls [(name, args)], text). ``tools``: the project's
@@ -178,7 +198,7 @@ class GeminiChat:
         config = self._config_for(tools) if tools else self._config
         config = config.model_copy(update={"http_options": self.request_options(timeout_s)})
         if self._attempts is not None:
-            self._attempts, self._token_seconds, self._attempt_errors = 0, 0.0, []
+            self._attempts, self._token_seconds, self._attempt_log = 0, 0.0, []
         started, error = time.monotonic(), None
         try:
             resp = self._client.models.generate_content(model=self.model_id, contents=contents, config=config)
@@ -187,7 +207,7 @@ class GeminiChat:
             raise
         finally:
             self.last_call = {"seconds": time.monotonic() - started, "attempts": self._attempts,
-                              "attempt_errors": None if self._attempt_errors is None else list(self._attempt_errors),
+                              "attempt_log": None if self._attempt_log is None else list(self._attempt_log),
                               "attempt_timeout_s": timeout_s, "token_seconds": self._token_seconds, "error": error}
         candidate = resp.candidates[0] if resp.candidates else None
         content = candidate.content if candidate else None
@@ -222,8 +242,11 @@ def ask(chat, toolbox: Toolbox, question: str, history: list[dict]) -> dict:
             _log_model_call(chat, model_calls, type(exc).__name__)
             log.info("assistant chain: %d model calls, %.3f s, outcome error %s", model_calls,
                      _clock() - chain_started, type(exc).__name__)
-            if "Timeout" in type(exc).__name__:  # every attempt of this call timed out
+            outcome = _outcome(exc)
+            if _is_deadline(outcome):  # the last attempt ran out of time
                 raise AssistantError(GEMINI_SLOW) from exc
+            if type(exc).__name__ == "ServerError":  # Gemini's own 5xx on every attempt
+                raise AssistantError(GEMINI_5XX) from exc
             raise
         model_calls += 1
         _log_model_call(chat, model_calls)
