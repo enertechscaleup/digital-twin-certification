@@ -15,6 +15,7 @@ from pathlib import Path
 import threading
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -32,7 +33,17 @@ from explain.sealed import causal_chain, kinds_for
 from explain.supplementary import UNAVAILABLE
 from projects import ProjectError, find_project, list_projects
 
-app = FastAPI(title="TwinEvidence")
+
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Start serving at once; load and verify every pinned run in the background meanwhile."""
+    if os.environ.get("PRELOAD_EVIDENCE", "1") == "1":
+        threading.Thread(target=preload_pinned_runs, name="preload-evidence", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="TwinEvidence", lifespan=_lifespan)
 
 # The platform's own log lines (for example the assistant's model calls and tool rounds per
 # question) go to stdout, which Cloud Run records.
@@ -106,6 +117,32 @@ def evidence(run: str) -> RunEvidence:
             except EvidenceIntegrityError as exc:
                 raise HTTPException(503, f"evidence failed verification and will not be served: {exc}")
         return _cache[run]
+
+
+def preload_pinned_runs() -> dict[str, str]:
+    """Load and verify every pinned run into the cache, so a viewer's first request does not wait
+    for it. Runs on a background thread at startup. A failure is logged and never raised: the app
+    keeps serving, and a run that failed here is fetched and verified again when it is requested."""
+    started, outcome = time.monotonic(), {}
+    try:
+        runs = [r["run"] for r in load_runs_config()["runs"]]
+    except Exception as exc:
+        _log.warning("preload: could not read the pinned runs: %s: %s", type(exc).__name__, exc)
+        return outcome
+    for run in runs:
+        t0 = time.monotonic()
+        try:
+            v = evidence(run).verification
+            outcome[run] = "ok"
+            _log.info("preload: %s verified %d/%d in %.3f s", run, sum(c["passed"] for c in v["checks"]),
+                      len(v["checks"]), time.monotonic() - t0)
+        except Exception as exc:
+            outcome[run] = type(exc).__name__
+            _log.warning("preload: %s failed after %.3f s: %s: %s", run, time.monotonic() - t0,
+                         type(exc).__name__, getattr(exc, "detail", exc))
+    _log.info("preload: %d of %d runs ready in %.3f s", list(outcome.values()).count("ok"), len(runs),
+              time.monotonic() - started)
+    return outcome
 
 
 def _upto(ev: RunEvidence, upto: int | None) -> int:

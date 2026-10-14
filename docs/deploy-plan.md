@@ -37,7 +37,8 @@ The Dockerfile copies the following:
 (unchanged) and the three Fulfilment-cell pins.
 
 The image carries **no evidence**. It reads the evidence bucket and verifies
-every run on load.
+every run on load. Each new instance starts serving immediately and verifies all
+pinned runs in the background.
 
 Checked locally with exactly those folders (`2026-10-13-container-fileset.txt`):
 - both projects are served;
@@ -135,7 +136,8 @@ Run against `https://cell---digital-twin-certification-eqxy2ooxuq-uc.a.run.app`:
    projects.
 5. **One assistant question per project.** The cell question must cite ledger
    entries. A request to change a status must be refused. Record seconds,
-   model calls and tool rounds (cap: 8 rounds).
+   model calls and tool rounds (cap: 8 rounds), and the per-call log lines (25 s per attempt, at most
+   one retry, 200 s per question).
 6. **No console errors** in the browser.
 7. **Cold-start time:** the first request to an idle revision, with time to
    first byte measured.

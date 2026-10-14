@@ -232,6 +232,10 @@ data was truthful.
 Runs are pinned by core-ledger head hash in `app/config/runs.json` and loaded
 from `gs://dtc-evidence-ledger-46053a8a/runs/<run>/<first 16 of head>/`.
 
+When an instance starts, it loads and verifies every pinned run in the background, so the first
+viewer does not wait for it. A failure there is logged and never stops the app from starting or
+serving; that run is fetched and verified again when it is requested.
+
 Nothing is served until it passes **11 checks**:
 - the manifest names the pinned head;
 - each of the five files (ledger, AI ledger, readings, timeline, exchange)
@@ -259,7 +263,14 @@ an earlier view.
 - 6 per minute and 60 per day per visitor;
 - 300 per hour per instance;
 - at most 8 tool rounds per question;
+- each model call waits at most 25 s per attempt, with at most one retry;
+- no new model call starts once a question has used 200 s, and a call's timeout shrinks so it
+  cannot run past that. When a limit is reached, the assistant replies with a plain message
+  ("try a narrower question" or "please try again");
 - capped answer length.
+
+These limits apply to the live assistant only. The sealed-explanation pipeline uses its own client
+with no timeout or retry, because its calls can legitimately take longer (up to 49 s measured).
 
 ### Dashboard (`web/`, React + Vite)
 
