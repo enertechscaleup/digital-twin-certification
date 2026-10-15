@@ -3,6 +3,7 @@ import { Wordmark } from './components.jsx'
 import { loadProjects } from './api.js'
 import { PREVIEW_PROJECTS } from './model/projects.js'
 import { loadSaved } from './model/store.js'
+import { HOME_URL } from './site.js'
 import ProjectsView from './ProjectsView.jsx'
 import NewProject from './NewProject.jsx'
 import OperationView from './OperationView.jsx'
@@ -35,9 +36,10 @@ export default function App() {
       <div className="preview-ribbon"><b>In development</b> · projects marked preview use mock data, not evidence</div>
       <header className="topbar">
         <div className="topbar-inner">
-          <Wordmark />
+          <Wordmark href={HOME_URL} label="TwinEvidence home" />
           <span className="wordmark-product">PLATFORM</span>
           <nav className="app-nav" aria-label="Platform">
+            <a href={HOME_URL}>Home</a>
             <a href="#projects" aria-current={section === 'projects' ? 'page' : undefined}>Projects</a>
             <a href="#composition" aria-current={section === 'composition' ? 'page' : undefined}>Composition patterns</a>
             <a href="#new" aria-current={section === 'new' ? 'page' : undefined}>New project</a>

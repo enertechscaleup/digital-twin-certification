@@ -2,9 +2,9 @@ import { X } from 'lucide-react'
 import { layers, twinByKey } from './model/projects.js'
 import { digitsFor, fmt } from './format.js'
 
-export function Wordmark({ href = '#projects' }) {
+export function Wordmark({ href = '#projects', label = 'TwinEvidence platform home' }) {
   return (
-    <a className="wordmark" href={href} aria-label="TwinEvidence platform home">
+    <a className="wordmark" href={href} aria-label={label}>
       <span className="wordmark-mark" aria-hidden="true"><span /><span /><span /></span>
       <span className="wordmark-type">twin<span>evidence</span></span>
     </a>
