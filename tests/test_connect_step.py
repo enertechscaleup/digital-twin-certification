@@ -22,6 +22,7 @@ WEB = ROOT / "web/src/platform"
 RULES = json.loads((WEB / "ingestion-rules.json").read_text())
 STEP = (WEB / "ConnectTelemetry.jsx").read_text()
 VALIDATOR = (WEB / "ingestValidate.js").read_text()
+STATUS_DATA = (WEB / "prototypeStatus.js").read_text()
 CHANNELS = RULES["example_project"]["channels"]
 SAMPLES = RULES["example_project"]["samples"]
 SAMPLE = SAMPLES["both"]
@@ -207,14 +208,14 @@ class TestTwinAndPlantStreams(unittest.TestCase):
     def test_alignment_sentence_and_rows(self):
         self.assertIn("The platform aligns twin and plant values on a shared tick index and evaluates a tick only when it is complete. "
                       "Aligning two independent systems in time (clock synchronisation, resampling, lag compensation) is designed, not built.", STEP)
-        built = STEP[STEP.index("const ALIGNMENT_BUILT"):STEP.index("const ALIGNMENT_DESIGNED")]
-        designed = STEP[STEP.index("const ALIGNMENT_DESIGNED"):STEP.index("const SOURCES_DESIGNED")]
+        built = STATUS_DATA[STATUS_DATA.index("export const ALIGNMENT_BUILT"):STATUS_DATA.index("export const ALIGNMENT_DESIGNED")]
+        designed = STATUS_DATA[STATUS_DATA.index("export const ALIGNMENT_DESIGNED"):STATUS_DATA.index("export const SEPARATE_FEEDS")]
         self.assertEqual(built.count("\n  '"), 5)
         self.assertIn("r1015e", built)
         for item in ("Clock synchronisation", "Resampling", "Lag compensation", "An alignment window per channel", "never guessed"):
             self.assertIn(item, designed)
-        self.assertIn("Per-value provenance", STEP)
-        self.assertIn("Separate twin messages and plant messages, joined per tick in the pipeline", STEP)
+        self.assertIn("export const PROVENANCE = 'Per-value provenance'", STATUS_DATA)
+        self.assertIn("export const SEPARATE_FEEDS = 'Separate twin messages and plant messages, joined per tick in the pipeline'", STATUS_DATA)
         self.assertEqual(STEP.count("Not built, designed only"), 2)  # the two row labels (alignment, value sources)
 
     def test_designed_items_have_design_notes(self):
@@ -241,10 +242,13 @@ class TestStepLabels(unittest.TestCase):
         self.assertIn("RULES.example_project.label", STEP)
         self.assertEqual(RULES["example_project"]["label"], "Example project")
 
-    def test_enable_connection_is_disabled_with_the_agreed_text(self):
-        button = re.search(r"<button[^>]*>\s*Enable connection\s*</button>", STEP)
+    def test_register_button_opens_the_status_view_and_the_note_stays(self):
+        button = re.search(r"<button [^\n]*>Register project and enable connection</button>", STEP)
         self.assertIsNotNone(button)
-        self.assertRegex(button.group(0), r"\bdisabled\b")
+        self.assertNotRegex(button.group(0), r"\bdisabled\b")
+        self.assertIn("onClick={() => setView('status')}", button.group(0))
+        self.assertIn("if (view === 'status') return <div className=\"panel\">{head}<PrototypeStatus onBack={() => setView('connect')} /></div>", STEP)
+        self.assertNotIn(">Enable connection<", STEP)
         self.assertIn("Not enabled in this prototype. Connecting a live source needs a project registered on the platform, "
                       "and the wizard saves configuration in this browser only.", STEP)
 

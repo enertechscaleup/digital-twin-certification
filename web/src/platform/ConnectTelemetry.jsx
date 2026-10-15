@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import RULES from './ingestion-rules.json'
 import { classify, readingKey, sha256Hex } from './ingestValidate.js'
+import PrototypeStatus from './PrototypeStatus.jsx'
+import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, SOURCES_DESIGNED } from './prototypeStatus.js'
 
 // "Connect telemetry": how a project's telemetry would reach the platform, the message contract
 // built from the project's own channels (twin side and plant side), the comparison and time-alignment
@@ -21,25 +23,6 @@ const ONE_MESSAGE = 'Today both streams arrive in one message, from one sender, 
 const FED_SAME = 'What the platform does today: the twin is fed the same values as the plant’s measured inputs.'
 const ALIGNMENT = 'The platform aligns twin and plant values on a shared tick index and evaluates a tick only when it is complete. Aligning two independent systems in time (clock synchronisation, resampling, lag compensation) is designed, not built.'
 const WIZARD_DEFAULT_TOLERANCE = 5 // the wizard's default tolerance for a twin taken from the catalogue (model/registry.js)
-
-const ALIGNMENT_BUILT = [
-  'Both values of a reading share one tick index (and one timestamp).',
-  'A tick is evaluated only when it is complete: every channel of the project, once.',
-  'A reading that arrives late re-issues its tick, and the complete tick is used (tested in replay r1015e).',
-  'An incomplete tick makes the engine refuse the run; it is never patched.',
-  'Two copies of a reading with different content are dead-lettered, never resolved.',
-]
-const ALIGNMENT_DESIGNED = [
-  'Clock synchronisation between the twin side’s and the plant side’s systems',
-  'Resampling of readings taken at different rates onto the tick grid',
-  'Lag compensation between a plant measurement and the matching twin prediction',
-  'An alignment window per channel, declared and sealed into the evidence',
-  'A tick missing either side is “not evaluated” and is never guessed',
-]
-const SOURCES_DESIGNED = [
-  ['Per-value provenance', 'Which party supplied physical_value and which supplied predicted_value. Today nothing in the message says so.'],
-  ['Separate twin messages and plant messages, joined per tick in the pipeline', 'Today one message carries both sides.'],
-]
 
 /** The channels a message may carry, from a wizard project or (with no project) the example project. */
 function contractFor(project) {
@@ -97,6 +80,7 @@ export default function ConnectTelemetry({ project }) {
   const [data, setData] = useState('')
   const [attrs, setAttrs] = useState('')
   const [result, setResult] = useState(null)
+  const [view, setView] = useState('connect')
   const show = (all, id) => { setData(all[id].data); setAttrs(JSON.stringify(all[id].attributes, null, 2)); setResult(null) }
   useEffect(() => {
     let live = true
@@ -124,9 +108,12 @@ export default function ConnectTelemetry({ project }) {
   const cmp = RULES.comparison
   const twoCols = { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'start' }
 
+  const head = <div className="panel-head"><h3 className="label">Connect telemetry</h3><span className="small muted">{contract.label}</span></div>
+  if (view === 'status') return <div className="panel">{head}<PrototypeStatus onBack={() => setView('connect')} /></div>
+
   return (
     <div className="panel">
-      <div className="panel-head"><h3 className="label">Connect telemetry</h3><span className="small muted">{contract.label}</span></div>
+      {head}
       <div className="panel-pad" style={{ display: 'grid', gap: 20 }}>
         <div style={{ display: 'grid', gap: 10 }}>
           <div className="h4">1 · Source</div>
@@ -240,7 +227,7 @@ export default function ConnectTelemetry({ project }) {
 
         <div style={{ display: 'grid', gap: 6 }}>
           <div className="h4">8 · Enable</div>
-          <div><button className="button button-small" disabled aria-describedby="enable-note">Enable connection</button></div>
+          <div><button className="button button-small" aria-describedby="enable-note" onClick={() => setView('status')}>Register project and enable connection</button></div>
           <p id="enable-note" className="hint">{DISABLED_NOTE}</p>
         </div>
       </div>

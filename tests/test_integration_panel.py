@@ -33,7 +33,7 @@ class TestWording(unittest.TestCase):
         # pick a sample, check it in the browser, or recompute its hashes.
         self.assertEqual(re.findall(r"onClick=", PANEL), [])
         step = (WEB / "ConnectTelemetry.jsx").read_text()
-        self.assertEqual(sorted(set(re.findall(r"onClick=\{(?:\(\) => )?(\w+)", step))), ["check", "pick", "recompute", "setSource"])
+        self.assertEqual(sorted(set(re.findall(r"onClick=\{(?:\(\) => )?(\w+)", step))), ["check", "pick", "recompute", "setSource", "setView"])
 
     def test_both_labels_used_exactly(self):
         self.assertIn("Comparison copy", PANEL)
@@ -84,9 +84,13 @@ class TestDemonstrationPage(unittest.TestCase):
         step = (WEB / "ConnectTelemetry.jsx").read_text()
         validator = (WEB / "ingestValidate.js").read_text()
         self.assertEqual(imports_of(PANEL), ["./ConnectTelemetry.jsx", "./ingestion-demo.json"])
-        self.assertEqual(imports_of(step), ["react", "./ingestion-rules.json", "./ingestValidate.js"])
+        status_view = (WEB / "PrototypeStatus.jsx").read_text()
+        status_data = (WEB / "prototypeStatus.js").read_text()
+        self.assertEqual(imports_of(step), ["react", "./ingestion-rules.json", "./ingestValidate.js", "./PrototypeStatus.jsx", "./prototypeStatus.js"])
         self.assertEqual(imports_of(validator), [])
-        for code in (self.view, PANEL, step, validator):
+        self.assertEqual(imports_of(status_view), ["react", "./site.js", "./prototypeStatus.js"])
+        self.assertEqual(imports_of(status_data), ["./ingestion-demo.json"])
+        for code in (self.view, PANEL, step, validator, status_view, status_data):
             for banned in NETWORK:
                 self.assertNotIn(banned, code)
 
