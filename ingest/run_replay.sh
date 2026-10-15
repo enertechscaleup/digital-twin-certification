@@ -62,7 +62,7 @@ echo "$(ts) waiting for the outputs"
 
 echo "$(ts) capturing console evidence before stopping the job"
 gcloud dataflow jobs describe "$JOB_ID" --project "$PROJECT" --region "$REGION" --full --format json > "$OUT/$RID.job.json"
-gcloud dataflow metrics list "$JOB_ID" --project "$PROJECT" --region "$REGION" --source service --format json > "$OUT/$RID.job-metrics.json" 2>/dev/null || true
+gcloud beta dataflow metrics list "$JOB_ID" --project "$PROJECT" --region "$REGION" --source service --format json > "$OUT/$RID.job-metrics.json" 2>/dev/null || true
 gcloud pubsub topics describe "$TOPIC" --project "$PROJECT" --format json > "$OUT/$RID.topic.json"
 bq --project_id "$PROJECT" show --format prettyjson "$DATASET.$TABLE" > "$OUT/$RID.bq-table.json"
 
@@ -76,7 +76,7 @@ done
 echo "$(ts) job state $STATE"
 [ "$STATE" = JOB_STATE_DRAINED ] || { echo "drain did not finish; cancelling"; gcloud dataflow jobs cancel "$JOB_ID" --project "$PROJECT" --region "$REGION"; }
 ingest/infra/stop_all.sh
-gcloud dataflow metrics list "$JOB_ID" --project "$PROJECT" --region "$REGION" --source service --format json > "$OUT/$RID.job-metrics-final.json" 2>/dev/null || true
+gcloud beta dataflow metrics list "$JOB_ID" --project "$PROJECT" --region "$REGION" --source service --format json > "$OUT/$RID.job-metrics-final.json" 2>/dev/null || true
 
 if [ -n "${AFTER_DRAIN_FILE:-}" ]; then
   echo "$(ts) publishing the kept-back reading after the drain (no job is reading any more)"
