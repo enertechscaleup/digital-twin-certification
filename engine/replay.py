@@ -115,17 +115,26 @@ def replay(project: Project, vendors: dict, sealed_dir: Path, run: str, readings
 
 def compare(result: RunResult, sealed_dir: Path, run: str, pin_head: str, actual_commit: str | None = None) -> dict:
     """Level 2: identical head. Level 1: the same decisions -- every entry's type, timestamp and
-    payload in the same order (the code commit string and the extra source entry aside), and the
-    same per-tick classifications."""
+    payload in the same order, and the same per-tick classifications. Set aside: the code commit
+    string, the extra source entry, and references to earlier entries by their hash (an approval
+    cites its recommendation's entry_hash), which differ whenever the chain records another commit;
+    each is mapped to the entry in the same position of the sealed run."""
     sealed = [json.loads(l) for l in (sealed_dir / f"{run}.ledger.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     timeline = [json.loads(l) for l in (sealed_dir / f"{run}.timeline.jsonl").read_text(encoding="utf-8").splitlines() if l.strip()]
     manifest = json.loads((sealed_dir / f"{run}.manifest.json").read_text(encoding="utf-8"))
     sealed_commit = manifest["code_commit"]
     entries = [e for e in result.ledger.entries if e["entry_type"] != "field_readings_source"]
 
+    same_hash = {a["entry_hash"]: b["entry_hash"] for a, b in zip(entries, sealed)}
+
     def decision(e: dict) -> str:
         text = json.dumps({"type": e["entry_type"], "ts": e["timestamp"], "payload": e["payload"]}, sort_keys=True)
-        return text.replace(json.dumps(actual_commit), json.dumps(sealed_commit)) if actual_commit else text
+        if actual_commit:
+            text = text.replace(json.dumps(actual_commit), json.dumps(sealed_commit))
+        for ours, theirs in same_hash.items():
+            if ours != theirs and ours in text:
+                text = text.replace(ours, theirs)
+        return text
 
     first_diff = next((i for i, (a, b) in enumerate(zip(entries, sealed)) if decision(a) != decision(b)), None)
     same_decisions = len(entries) == len(sealed) and first_diff is None

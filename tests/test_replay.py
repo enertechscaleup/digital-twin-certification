@@ -61,15 +61,16 @@ class TestReplayEquivalence(unittest.TestCase):
         self.assertEqual(result.ledger.head_hash, pin["core_ledger_head_hash"])
 
     def test_ingestion_labelled_run_same_decisions_different_head(self):
-        pin = PINS[SMALL]
-        d = Path("data/fulfilment")
-        with tempfile.TemporaryDirectory() as t:
-            project = find_project(pin["project_id"])
-            result, _ = replay(project, simulated_vendors(project), d, SMALL, d / f"{SMALL}.readings.jsonl", INGESTION,
-                               Path(t), actual_commit="0" * 40, ingestion={"replay_id": "test"})
-            report = compare(result, d, SMALL, pin["core_ledger_head_hash"], "0" * 40)
-        self.assertTrue(report["level1_same_decisions"])
-        self.assertFalse(report["level2_same_head"])
+        # Every run, including the full cycles, whose approval cites its recommendation by entry hash.
+        for run, pin in PINS.items():
+            d = SEALED[pin["project_id"]]
+            with self.subTest(run=run), tempfile.TemporaryDirectory() as t:
+                project = find_project(pin["project_id"])
+                result, _ = replay(project, simulated_vendors(project), d, run, d / f"{run}.readings.jsonl", INGESTION,
+                                   Path(t), actual_commit="0" * 40, ingestion={"replay_id": "test"})
+                report = compare(result, d, run, pin["core_ledger_head_hash"], "0" * 40)
+                self.assertTrue(report["level1_same_decisions"], report)
+                self.assertFalse(report["level2_same_head"])
         self.assertEqual([e["entry_type"] for e in result.ledger.entries][-2:], ["field_readings_source", "run_completed"])
         source = result.ledger.entries[-2]["payload"]
         self.assertEqual(source["label"], "ingestion-labelled")
