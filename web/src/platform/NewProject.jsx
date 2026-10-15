@@ -371,7 +371,7 @@ function StepReview({ p, issues }) {
   return (
     <>
       <StepHead n={6} title="Review and create">
-        The platform checks the configuration with the same rules it uses when loading a project. Creating it records the setup and the connections to registered twins; monitoring starts once telemetry is connected.
+        This browser checks the configuration with its own copy of the platform's rules; the engine does not load this file yet. Creating the project saves it in this browser only, as configuration: nothing is sent to the platform and no telemetry is connected.
       </StepHead>
       <ul className="checklist panel panel-pad" style={{ gap: 10 }}>
         {checks.map(([t, ok]) => <li key={t}>{ok ? <Check size={15} className="ok" /> : <TriangleAlert size={15} className="bad" />} {t}</li>)}

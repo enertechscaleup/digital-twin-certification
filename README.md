@@ -293,7 +293,8 @@ Built into the container and served by the same Cloud Run service.
     timeline, a cascade view and a split of sensor faults from twin error.
 - **Demo-only and local-only pieces, labelled as such:**
   - Projects created under "New project" are saved only in the viewer's
-    browser. They are shown as previews from mock data, with no evidence.
+    browser, as configuration only. They open on an "Awaiting telemetry" page
+    with no mock data and no evidence.
   - "Acknowledge (demo)" on anomalies is not written to evidence.
 
 ## Deploy

@@ -1,0 +1,76 @@
+{
+ "label": "Streaming ingestion: demonstrated on replayed synthetic data on 2026-10-15. Not live telemetry. Not tested at scale.",
+ "date": "2026-10-15",
+ "replay_id": "r1015b",
+ "replayed_run": {
+  "project": "Fulfilment cell",
+  "run": "assurance-amr_faults_showcase-seed42",
+  "title": "Fault types showcase"
+ },
+ "topic": "dtc-ingest-readings",
+ "dead_letter_topic": "dtc-ingest-readings-dlq",
+ "bigquery_table": "dtc_ingest.readings_validated",
+ "region": "us-central1",
+ "pipeline": {
+  "service": "Dataflow",
+  "sdk": "Apache Beam, Python",
+  "mode": "streaming",
+  "workers": 1,
+  "machine": "n1-standard-1",
+  "stopped": "drained after the replay"
+ },
+ "counts": {
+  "published": 810,
+  "readings": 765,
+  "identical_duplicates_sent": 44,
+  "raw_messages_stored": 810,
+  "validated_readings": 765,
+  "ticks": 45,
+  "dead_lettered": 0,
+  "bigquery_rows": 765
+ },
+ "readings_file_identical_to_sealed": true,
+ "engine": {
+  "comparison_copy": {
+   "head": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125",
+   "pin_head": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125",
+   "head_identical": true,
+   "same_decisions": true
+  },
+  "ingestion_labelled": {
+   "same_decisions": true,
+   "head_identical": false
+  }
+ },
+ "example_message": {
+  "data": {
+   "run_id": "field-amr_faults_showcase-2c3b1e2a87",
+   "kind": "field",
+   "tick": 0,
+   "timestamp": "2026-10-01T00:00:00Z",
+   "operational_hours": 0,
+   "twin_id": "dispatcher-op-001",
+   "twin_version": "1.0.0",
+   "channel_id": "tasks_1",
+   "direction": "output",
+   "unit": "tasks/h",
+   "physical_value": 98.1676,
+   "predicted_value": 97.436,
+   "test_point": null
+  },
+  "attributes": {
+   "schema": "dtc-reading/1",
+   "source": "replay",
+   "replay_id": "r1015b",
+   "content_sha256": "5845aa9422b26968e01d52e8e966270441e59c76469eadd154fc2412e56dbadc",
+   "event_ts": "2026-10-01T00:00:00Z",
+   "reading_key": "9f9d5b1d5d592ef0b3ac4d9f0d4ff6d1"
+  }
+ },
+ "receipt_sha256": "9349d7569145b836721792bce4bb2ceb71833b36f88043c689c1526af32f92c3",
+ "other_tests": [
+  "8 malformed messages, one per reject reason: all 8 in the dead-letter topic, none in BigQuery",
+  "a reading published 4 minutes late: its tick re-fired with the reading; same result",
+  "a conflicting copy and a reading sent after the job was stopped: the engine refused the incomplete ticks"
+ ]
+}

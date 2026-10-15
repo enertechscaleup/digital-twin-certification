@@ -33,7 +33,7 @@ export default function App() {
 
   return (
     <>
-      <div className="preview-ribbon"><b>In development</b> · projects marked preview use mock data, not evidence</div>
+      <div className="preview-ribbon"><b>In development</b> · all data is synthetic · projects made in the wizard are configuration only, not evidence</div>
       <header className="topbar">
         <div className="topbar-inner">
           <Wordmark href={HOME_URL} label="TwinEvidence home" />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, Braces, FlaskConical, Link2, Pause, Play, Sparkles } from 'lucide-react'
 import { ConfigDrawer, GapChart, Graph, InputChart, StatusPill } from './components.jsx'
 import { digitsFor, fmt } from './format.js'
+import IntegrationPanel from './IntegrationPanel.jsx'
 import { ESCALATION, TWIN_MODES, channelCount, layers, topology, twinByKey } from './model/projects.js'
 import { mockRun } from './model/mockRun.js'
 import WireframeAsset from '../visual/wireframe/WireframeAsset.jsx'
@@ -337,6 +338,7 @@ function PendingProject({ project }) {
           <p className="hint">The platform never builds or adjusts a twin itself. Until the owners register their twins, this project holds configuration only.</p>
         </div>
       </div>
+      <IntegrationPanel />
       {drawer && <ConfigDrawer project={project} onClose={() => setDrawer(false)} />}
     </div>
   )
