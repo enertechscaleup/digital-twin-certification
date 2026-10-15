@@ -36,6 +36,8 @@ publisher (replays a sealed run's readings, accelerated)
 
 **What the pipeline checks, and what it never does.** It checks shape: valid JSON (no `NaN` / `Infinity` tokens), exactly the 13 fields (the generator's ground-truth `injected_faults` is refused), types, `kind = field`, a known (twin, channel) with the right direction and unit, a correct `reading_key` and `content_sha256`. It **never** cleans, clips or judges a value: dropouts (`null`), spikes, stuck values and out-of-range inputs pass through untouched, because classifying them is the engine's job.
 
+**Ticks, not event-time windows.** Readings are grouped by (replay, run, tick) in the global window and fired every 5 seconds of processing time. Event-time windows on the simulated timestamps were not used: those timestamps lie in the past, and a watermark could treat a whole replay as late.
+
 **Duplicates and late data.** Identical copies of a reading are dropped. Two copies with the same key but different content are never resolved: both go to the dead-letter topic, the tick is then incomplete and the engine refuses to run. A reading that arrives late re-fires its tick with a higher pane number, and the seal step uses the highest pane. A reading that arrives after the job has been drained is not there, and the engine refuses the incomplete tick.
 
 **Two labelled engine runs** (neither is ever pinned or uploaded to the evidence bucket):
@@ -49,9 +51,21 @@ Pub/Sub topics `dtc-ingest-readings` and `dtc-ingest-readings-dlq` with subscrip
 
 Run one replay: `ingest/run_replay.sh <pinned run> <replay id> [publisher options]`. Stop every job and check: `ingest/infra/stop_all.sh`. Remove everything: `ingest/infra/teardown.sh`. Tests: `python -m unittest tests.test_replay` (engine side) and `.venv-ingest/bin/python -m unittest discover -s ingest/tests` (pipeline, offline).
 
-## Results
+## Results of the demonstration (15 Oct 2026, replayed synthetic data)
 
-See "Results of the demonstration" below; the numbers come from the receipts of each replay.
+Each replay ran its own Dataflow job (1 worker, n1-standard-1, Streaming Engine), which was drained as soon as the replay was complete. Numbers are from each replay's receipt.
+
+| Replay | What was sent | Pipeline result | Engine result |
+|---|---|---|---|
+| Fulfilment cell, fault showcase (the key test) | 765 readings, shuffled within ±3 ticks, plus 44 identical duplicates and an end marker (810 messages) | 810 raw; 765 validated, 45 ticks, byte-identical to the sealed readings file; 765 BigQuery rows; 0 dead letters | **Comparison copy: head identical to the pin** (`59952ac5…`). **Ingestion-labelled run: same decisions**, head differs by design |
+| Fulfilment cell, full cycle | 1,360 readings, shuffled within ±3 ticks, plus 73 identical duplicates and an end marker (1,434 messages) | 1,360 validated, 80 ticks, byte-identical; 1,360 BigQuery rows; 0 dead letters | **Comparison copy: head identical** (`466d5d1f…`). **Ingestion-labelled: same decisions** |
+| Invalid messages | Fault showcase plus one malformed message per reject reason (8) and duplicates | All 8 in the dead-letter subscription, one per reason; none in the validated files or BigQuery; run complete | Head identical (comparison copy); same decisions (labelled) |
+| Late reading | Fault showcase with one tick-10 reading published 4 minutes late | Tick 10: first pane 16 readings, late pane 17 | Head identical (comparison copy); same decisions (labelled) |
+| Conflict and too late | One reading republished with different content (tick 20); one reading published only after the job was drained (tick 30) | Both conflicting copies dead-lettered; receipt `complete: false`, ticks 20 and 30 incomplete | **Refused** (fail closed): "tick 20: 16 readings, expected 17" |
+
+The engine side is also covered offline: `tests/test_replay.py` replays all six sealed runs (head identical as a comparison copy, same decisions as an ingestion-labelled run) and checks every refusal.
+
+**Cost:** the six Dataflow jobs together used about 30 vCPU-minutes, about $0.05 at list prices; Pub/Sub, BigQuery and Cloud Storage use was within free tiers or a fraction of a cent.
 
 ## Designed, not built
 
