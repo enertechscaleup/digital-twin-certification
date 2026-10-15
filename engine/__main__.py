@@ -5,6 +5,8 @@
     python -m engine run --project projects/fulfilment_cell.json --scenario scenarios/amr_full_cycle.json
     python -m engine verify-ledger data/<run>.ledger.jsonl
     python -m engine register-twins [--project projects/<project>.json]
+    python -m engine replay --project projects/fulfilment_cell.json --run assurance-amr_faults_showcase-seed42 \
+        --readings <validated readings file> --mode comparison-copy|ingestion-labelled --out <dir> [--receipt <file>]
 """
 
 from __future__ import annotations
@@ -136,6 +138,38 @@ def cmd_register(args: argparse.Namespace) -> None:
     print(f"{len(new)} new identities" if new else "every twin already has a permanent identity")
 
 
+SEALED = {"oil-gas-compressor-train": Path("data/lineage"), "amr-fulfilment-cell": Path("data/fulfilment")}
+
+
+def cmd_replay(args: argparse.Namespace) -> None:
+    """Run the engine on externally ingested readings and compare with the pinned run (engine/replay.py)."""
+    import hashlib
+
+    from engine.replay import INGESTION, compare, replay
+    project = load_project(args.project)
+    sealed = args.sealed or SEALED[project.project_id]
+    pin = next(r for r in json.loads(Path("app/config/runs.json").read_text())["runs"] if r["run"] == args.run)
+    commit = code_commit()
+    ingestion = None
+    if args.receipt:
+        receipt_bytes = args.receipt.read_bytes()
+        receipt = json.loads(receipt_bytes)
+        ingestion = {"receipt_sha256": hashlib.sha256(receipt_bytes).hexdigest(), "replay_id": receipt["replay_id"],
+                     "raw_manifest_sha256": receipt["raw"]["manifest_sha256"], "dead_lettered": receipt["counts"]["dead_lettered"],
+                     "published": receipt["counts"]["published"], "pipeline": receipt["pipeline"]}
+    result, loaded = replay(project, vendors([], project), sealed, args.run, args.readings, args.mode, args.out, commit, ingestion)
+    manifest = json.loads((sealed / f"{args.run}.manifest.json").read_text())
+    report = {
+        "run": args.run, "label": args.mode, "readings": loaded.rows,
+        "readings_file_sha256": loaded.file_sha256,
+        "readings_file_identical_to_sealed": loaded.file_sha256 == manifest["file_sha256"][f"{args.run}.readings.jsonl"],
+        "code_commit_recorded": manifest["code_commit"] if args.mode != INGESTION else commit,
+        **compare(result, sealed, args.run, pin["core_ledger_head_hash"], commit if args.mode == INGESTION else None),
+    }
+    (args.out / f"{args.run}.{args.mode}.report.json").write_text(json.dumps(report, indent=2) + "\n")
+    print(json.dumps(report, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m engine", description="Deterministic assurance engine.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -155,6 +189,15 @@ def main() -> None:
     g.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
     g.add_argument("--identities", type=Path, default=IDENTITIES)
     g.set_defaults(func=cmd_register)
+    rp = sub.add_parser("replay", help="run the engine on ingested field readings and compare with the pinned run")
+    rp.add_argument("--project", type=Path, required=True)
+    rp.add_argument("--run", required=True, help="the pinned run whose scenario, seed and start time are replayed")
+    rp.add_argument("--readings", type=Path, required=True, help="validated readings file (JSON lines, canonical order)")
+    rp.add_argument("--mode", choices=["comparison-copy", "ingestion-labelled"], required=True)
+    rp.add_argument("--out", type=Path, required=True)
+    rp.add_argument("--receipt", type=Path, help="the ingestion receipt (ingest/seal.py); recorded in an ingestion-labelled run")
+    rp.add_argument("--sealed", type=Path, help="folder of the sealed run (default: by project)")
+    rp.set_defaults(func=cmd_replay)
     args = parser.parse_args()
     args.func(args)
 

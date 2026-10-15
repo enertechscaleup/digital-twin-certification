@@ -12,3 +12,7 @@ video/out
 video/public/s3
 video/public/vo
 video/public/music
+
+# Ingestion slice: its own Python environment and project settings
+.venv-ingest/
+ingest/.env

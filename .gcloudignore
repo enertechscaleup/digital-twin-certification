@@ -13,3 +13,5 @@ video
 deck-assets
 .pytest_cache
 .DS_Store
+ingest
+.venv-ingest

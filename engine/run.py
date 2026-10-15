@@ -10,6 +10,7 @@ twin's formula or parameters, only what crosses the boundary."""
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -58,11 +59,21 @@ def run_assurance(
     project: Project | None = None,
     identities: list[dict] | None = None,
     code_commit: str | None = None,
+    field_source: Iterable[list[dict]] | None = None,
+    readings_source: dict | None = None,
 ) -> RunResult:
     """``vendors``: a connection to each twin owner's endpoint, by twin type.
     ``project`` defaults to the oil & gas compressor train (projects/compressor_train.json).
     ``identities`` defaults to the platform's permanent twin identities (registry/identities.json);
-    ``code_commit`` is the platform commit, sealed beside each registered version."""
+    ``code_commit`` is the platform commit, sealed beside each registered version.
+
+    ``field_source`` (replay mode, engine/replay.py): the field readings, one list of ingested dicts
+    per tick, taken from outside instead of the generator. Design time, the joint tests and the
+    owners' recalibration and advice are unchanged. Left as None, the run is exactly as before.
+    ``readings_source``: recorded in a ``field_readings_source`` entry just before ``run_completed``;
+    only allowed with ``field_source``."""
+    if readings_source is not None and field_source is None:
+        raise ValueError("readings_source describes an external field_source; none was given")
     protocol = protocol or EscalationProtocol()
     project = project or load_project()
     registry = registry or load_registry(project)
@@ -164,8 +175,10 @@ def run_assurance(
     timeline = []
     recal = scenario.recalibration
     episode = AdjustmentEpisode(scenario.adjustment, registry, ledger, monitor) if scenario.adjustment else None
-    for batch in gen.field_run(scenario):
-        tick_readings = [ingest(asdict(r)) for r in batch]
+    # In replay mode the readings already carry any approved setpoint, so the adjustment episode's
+    # write into the generator (before_tick) has no effect on them.
+    for batch in (gen.field_run(scenario) if field_source is None else field_source):
+        tick_readings = [ingest(r if isinstance(r, dict) else asdict(r)) for r in batch]
         readings.extend(tick_readings)
         timeline.append(monitor.process_tick(tick_readings))
         tick = tick_readings[0]["tick"]
@@ -184,6 +197,9 @@ def run_assurance(
         if episode:
             episode.before_tick(tick + 1, gen._timestamp(tick + 1), gen)
     monitor.finish()
+    if readings_source is not None:
+        # Last but one, so no entry that cites an earlier entry's seq moves.
+        ledger.append("field_readings_source", timeline[-1]["timestamp"] if timeline else ts0, readings_source)
     ledger.append("run_completed", timeline[-1]["timestamp"] if timeline else ts0, {
         "ticks": len(timeline),
         "final_status": {tid: {"level": a.level, "assurance_id": a.assurance_id} for tid, a in monitor.status.items()},
