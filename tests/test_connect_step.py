@@ -23,7 +23,8 @@ RULES = json.loads((WEB / "ingestion-rules.json").read_text())
 STEP = (WEB / "ConnectTelemetry.jsx").read_text()
 VALIDATOR = (WEB / "ingestValidate.js").read_text()
 CHANNELS = RULES["example_project"]["channels"]
-SAMPLE = RULES["example_project"]["sample"]
+SAMPLES = RULES["example_project"]["samples"]
+SAMPLE = SAMPLES["both"]
 
 
 def attrs_for(data: str, row: dict | None = None, **over) -> dict:
@@ -43,7 +44,10 @@ def variant(**changes) -> tuple[str, dict]:
 
 def vectors() -> list[tuple[str, str, dict, str]]:
     """(name, data text, attributes, expected verdict)."""
-    v = [("valid sample", SAMPLE["data"], SAMPLE["attributes"], "valid")]
+    v = [("valid sample, both sides (output channel)", SAMPLE["data"], SAMPLE["attributes"], "valid"),
+         ("valid sample, plant only (input channel)", SAMPLES["plant_only"]["data"], SAMPLES["plant_only"]["attributes"], "valid")]
+    for reason, data, attrs in invalid_messages(json.loads(SAMPLES["plant_only"]["data"]), "sample"):
+        v.append((f"plant-only publisher {reason}", data.decode(), attrs, reason))
     for reason, data, attrs in invalid_messages(json.loads(SAMPLE["data"]), "sample"):
         v.append((f"publisher {reason}", data.decode(), attrs, reason))
     d, a = variant(physical_value=None)
@@ -130,6 +134,98 @@ class TestBrowserValidatorMatchesPipeline(unittest.TestCase):
         exercised = {e for _, _, _, e in vectors()}
         single = {c for c, _ in pipeline.REJECT_REASONS} - {"conflicting_duplicate"}
         self.assertTrue(single <= exercised, single - exercised)
+
+
+class TestComparisonRuleFromEngine(unittest.TestCase):
+    cmp = RULES["comparison"]
+
+    def test_numbers_are_the_engine_protocol(self):
+        from engine.protocol import EscalationProtocol
+        proto = EscalationProtocol().to_dict()
+        for k, v in self.cmp["protocol"].items():
+            self.assertEqual(v, proto[k], k)
+        self.assertFalse(proto["envelope_can_nullify"])
+        self.assertIn("input-envelope violations never nullify.", self.cmp["rules"][2])
+
+    def test_gap_formula_is_the_engine_function(self):
+        from engine.readings import gap_pct
+        self.assertEqual(self.cmp["gap_formula"], "gap % = 100 × |physical − predicted| / |predicted|")
+        for physical, predicted in ((110, 100), (90, 100), (-5, -4), (3.3, 3.0)):
+            self.assertAlmostEqual(gap_pct(physical, predicted), 100 * abs(physical - predicted) / abs(predicted))
+
+    def test_rules_match_the_monitor(self):
+        monitor = (ROOT / "engine/monitor.py").read_text()
+        # Data quality on the measured value only; gap only on clean outputs with a valid, non-zero prediction.
+        self.assertIn('v = None if r is None else r["physical_value"]', monitor)
+        self.assertIn('if not is_valid_number(r["predicted_value"]) or r["predicted_value"] == 0:', monitor)
+        self.assertIn("if bad_inputs:", monitor)
+        self.assertIn("g > c.tolerance_pct", monitor)
+        self.assertIn("critical_limit = c.tolerance_pct * self.protocol.nullify_tolerance_multiplier", monitor)
+        p = self.cmp["protocol"]
+        self.assertTrue(self.cmp["rules"][0].startswith(f"Flagged after {p['flag_after_consecutive']} consecutive readings beyond τ"))
+        self.assertIn(f"Nullified after {p['nullify_after_consecutive']} consecutive readings beyond {p['nullify_tolerance_multiplier']:g}τ", self.cmp["rules"][1])
+        self.assertIn(f"stuck ×{p['stuck_after_identical']}, a jump above {p['spike_jump_pct']:g}%", self.cmp["rules"][3])
+
+    def test_page_shows_the_exported_rule_not_hand_written_text(self):
+        self.assertIn("RULES.comparison", STEP)
+        self.assertIn("{cmp.gap_formula}", STEP)
+        self.assertIn("cmp.rules.map", STEP)
+        self.assertNotIn("consecutive readings beyond", STEP)
+
+    def test_example_tolerances_come_from_the_registry(self):
+        from engine.registry import load_registry
+        from projects import load_project
+        reg = load_registry(load_project(ROOT / "projects/fulfilment_cell.json"))
+        want = {(p.operational_twin_id, c.channel_id): (c.tolerance_pct if c.direction == "output" else None)
+                for p in reg.products.values() for c in p.channels}
+        self.assertEqual({(c["twin_id"], c["channel_id"]): c["tolerance_pct"] for c in CHANNELS}, want)
+
+
+class TestTwinAndPlantStreams(unittest.TestCase):
+    def test_two_named_streams_and_what_each_carries(self):
+        self.assertIn('<div className="h4">Twin stream</div>', STEP)
+        self.assertIn('<div className="h4">Plant stream</div>', STEP)
+        self.assertIn("What the platform does today: the twin is fed the same values as the plant’s measured inputs.", STEP)
+        self.assertIn("Today both streams arrive in one message, from one sender, with one timestamp. "
+                      "Separate twin and plant messages are designed, not built.", STEP)
+
+    def test_input_shows_one_value_output_two(self):
+        self.assertIn("data-values={output ? 2 : 1}", STEP)
+        self.assertIn("{output ? 'predicted_value (twin_version)' : '— (fed the measured input)'}", STEP)
+        self.assertIsNone(json.loads(SAMPLES["plant_only"]["data"])["predicted_value"])
+        self.assertEqual(json.loads(SAMPLES["plant_only"]["data"])["direction"], "input")
+        both = json.loads(SAMPLES["both"]["data"])
+        self.assertEqual(both["direction"], "output")
+        self.assertIsNotNone(both["predicted_value"])
+
+    def test_synthetic_plant_label_next_to_the_plant_stream(self):
+        label = "The plant data in this demonstration is synthetic. It has never been compared with a real physical system."
+        self.assertIn(label, STEP)
+        plant = STEP[STEP.index('data-stream="plant"'):]
+        self.assertIn("{SYNTHETIC_PLANT}", plant[:plant.index("</div>\n          </div>")])
+
+    def test_alignment_sentence_and_rows(self):
+        self.assertIn("The platform aligns twin and plant values on a shared tick index and evaluates a tick only when it is complete. "
+                      "Aligning two independent systems in time (clock synchronisation, resampling, lag compensation) is designed, not built.", STEP)
+        built = STEP[STEP.index("const ALIGNMENT_BUILT"):STEP.index("const ALIGNMENT_DESIGNED")]
+        designed = STEP[STEP.index("const ALIGNMENT_DESIGNED"):STEP.index("const SOURCES_DESIGNED")]
+        self.assertEqual(built.count("\n  '"), 5)
+        self.assertIn("r1015e", built)
+        for item in ("Clock synchronisation", "Resampling", "Lag compensation", "An alignment window per channel", "never guessed"):
+            self.assertIn(item, designed)
+        self.assertIn("Per-value provenance", STEP)
+        self.assertIn("Separate twin messages and plant messages, joined per tick in the pipeline", STEP)
+        self.assertEqual(STEP.count("Not built, designed only"), 2)  # the two row labels (alignment, value sources)
+
+    def test_designed_items_have_design_notes(self):
+        doc = (ROOT / "docs/ingestion.md").read_text()
+        for item in ("Per-value provenance", "Separate twin messages and plant messages", "Clock synchronisation"):
+            self.assertIn(item, doc)
+
+    def test_forbidden_phrases(self):
+        for phrase in ("Connected", "time-synchronised", "time synchronised", "synchronised clocks", "real-time alignment",
+                       "real time alignment", "validated in the field", "field-validated", "field validation", "field-tested"):
+            self.assertNotIn(phrase.lower(), STEP.lower())
 
 
 class TestStepLabels(unittest.TestCase):

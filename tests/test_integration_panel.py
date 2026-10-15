@@ -30,10 +30,10 @@ class TestWording(unittest.TestCase):
             self.assertNotIn(banned, PANEL)
         self.assertNotRegex(PANEL, r"\bimport\b.*\bapi\.js\b")
         # The panel itself has no buttons; the Connect telemetry step's only handlers choose a source,
-        # check a sample in the browser, or recompute its hashes.
+        # pick a sample, check it in the browser, or recompute its hashes.
         self.assertEqual(re.findall(r"onClick=", PANEL), [])
         step = (WEB / "ConnectTelemetry.jsx").read_text()
-        self.assertEqual(sorted(set(re.findall(r"onClick=\{(?:\(\) => )?(\w+)", step))), ["check", "recompute", "setSource"])
+        self.assertEqual(sorted(set(re.findall(r"onClick=\{(?:\(\) => )?(\w+)", step))), ["check", "pick", "recompute", "setSource"])
 
     def test_both_labels_used_exactly(self):
         self.assertIn("Comparison copy", PANEL)

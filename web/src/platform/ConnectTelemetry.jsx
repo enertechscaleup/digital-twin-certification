@@ -3,8 +3,9 @@ import RULES from './ingestion-rules.json'
 import { classify, readingKey, sha256Hex } from './ingestValidate.js'
 
 // "Connect telemetry": how a project's telemetry would reach the platform, the message contract
-// built from the project's own channels, and a sample-message check that runs in the browser with
-// the Dataflow validator's rules. Nothing here calls a network service or connects anything.
+// built from the project's own channels (twin side and plant side), the comparison and time-alignment
+// rules the engine applies today, and a sample-message check that runs in the browser with the
+// Dataflow validator's rules. Nothing here calls a network service or connects anything.
 
 const SOURCES = [
   { id: 'push', label: 'Push to Pub/Sub', status: 'Demonstrated on replayed synthetic data',
@@ -15,22 +16,46 @@ const SOURCES = [
     text: 'Each twin owner’s endpoint would return the twin’s prediction for the same tick, which the platform would place in predicted_value next to the measured value. In this prototype predictions come from simulated owner endpoints.' },
 ]
 const DISABLED_NOTE = 'Not enabled in this prototype. Connecting a live source needs a project registered on the platform, and the wizard saves configuration in this browser only.'
+const SYNTHETIC_PLANT = 'The plant data in this demonstration is synthetic. It has never been compared with a real physical system.'
+const ONE_MESSAGE = 'Today both streams arrive in one message, from one sender, with one timestamp. Separate twin and plant messages are designed, not built.'
+const FED_SAME = 'What the platform does today: the twin is fed the same values as the plant’s measured inputs.'
+const ALIGNMENT = 'The platform aligns twin and plant values on a shared tick index and evaluates a tick only when it is complete. Aligning two independent systems in time (clock synchronisation, resampling, lag compensation) is designed, not built.'
+const WIZARD_DEFAULT_TOLERANCE = 5 // the wizard's default tolerance for a twin taken from the catalogue (model/registry.js)
+
+const ALIGNMENT_BUILT = [
+  'Both values of a reading share one tick index (and one timestamp).',
+  'A tick is evaluated only when it is complete: every channel of the project, once.',
+  'A reading that arrives late re-issues its tick, and the complete tick is used (tested in replay r1015e).',
+  'An incomplete tick makes the engine refuse the run; it is never patched.',
+  'Two copies of a reading with different content are dead-lettered, never resolved.',
+]
+const ALIGNMENT_DESIGNED = [
+  'Clock synchronisation between the twin side’s and the plant side’s systems',
+  'Resampling of readings taken at different rates onto the tick grid',
+  'Lag compensation between a plant measurement and the matching twin prediction',
+  'An alignment window per channel, declared and sealed into the evidence',
+  'A tick missing either side is “not evaluated” and is never guessed',
+]
+const SOURCES_DESIGNED = [
+  ['Per-value provenance', 'Which party supplied physical_value and which supplied predicted_value. Today nothing in the message says so.'],
+  ['Separate twin messages and plant messages, joined per tick in the pipeline', 'Today one message carries both sides.'],
+]
 
 /** The channels a message may carry, from a wizard project or (with no project) the example project. */
 function contractFor(project) {
   if (!project) {
     const ex = RULES.example_project
-    return { label: `${RULES.example_project.label}: ${ex.name}`, projectId: ex.project_id, channels: ex.channels, sample: ex.sample }
+    return { label: `${RULES.example_project.label}: ${ex.name}`, projectId: ex.project_id, channels: ex.channels, samples: ex.samples }
   }
   const channels = project.twins.flatMap((t) => t.channels.map((c) => ({
     twin_id: t.operational_twin_id, twin: t.name, channel_id: c.id, name: c.name, direction: c.direction, unit: c.unit,
     range: c.assured_range, monitored: c.monitored !== false,
+    tolerance_pct: c.direction === 'output' ? c.tolerance_pct : null,
   })))
-  return { label: project.name, projectId: project.project_id, channels, sample: null }
+  return { label: project.name, projectId: project.project_id, channels, samples: null }
 }
 
-async function sampleFor(projectId, channels) {
-  const c = channels.find((x) => x.direction === 'output' && x.monitored !== false) || channels[0]
+async function sampleOf(projectId, c) {
   if (!c) return { data: '', attributes: {} }
   const mid = (c.range[0] + c.range[1]) / 2
   const data = JSON.stringify({
@@ -42,20 +67,43 @@ async function sampleFor(projectId, channels) {
     reading_key: await readingKey('sample', `field-${projectId}-sample`, 0, c.twin_id, c.channel_id), content_sha256: await sha256Hex(data) } }
 }
 
+async function samplesFor(contract) {
+  if (contract.samples) return contract.samples
+  const ch = contract.channels
+  return {
+    plant_only: await sampleOf(contract.projectId, ch.find((x) => x.direction === 'input') || ch[0]),
+    both: await sampleOf(contract.projectId, ch.find((x) => x.direction === 'output' && x.monitored !== false) || ch[0]),
+  }
+}
+
+const SAMPLES = [
+  { id: 'plant_only', label: 'Plant-only reading (input channel)' },
+  { id: 'both', label: 'Reading with both sides (output channel)' },
+]
 const reasonText = (code) => RULES.reject_reasons.find((r) => r.code === code)?.meaning || code
+
+function tolerance(c) {
+  if (c.direction !== 'output') return '— (assured-range check)'
+  if (c.monitored === false) return 'not monitored'
+  if (c.tolerance_pct == null) return `τ = ${WIZARD_DEFAULT_TOLERANCE} % (wizard default)`
+  return `τ = ${c.tolerance_pct} %`
+}
 
 export default function ConnectTelemetry({ project }) {
   const contract = useMemo(() => contractFor(project), [project])
   const [source, setSource] = useState('push')
+  const [samples, setSamples] = useState(null)
+  const [which, setWhich] = useState('both')
   const [data, setData] = useState('')
   const [attrs, setAttrs] = useState('')
   const [result, setResult] = useState(null)
+  const show = (all, id) => { setData(all[id].data); setAttrs(JSON.stringify(all[id].attributes, null, 2)); setResult(null) }
   useEffect(() => {
     let live = true
-    const load = contract.sample ? Promise.resolve(contract.sample) : sampleFor(contract.projectId, contract.channels)
-    load.then((s) => { if (live) { setData(s.data); setAttrs(JSON.stringify(s.attributes, null, 2)); setResult(null) } })
+    samplesFor(contract).then((s) => { if (live) { setSamples(s); show(s, 'both'); setWhich('both') } })
     return () => { live = false }
   }, [contract])
+  const pick = (id) => { setWhich(id); if (samples) show(samples, id) }
 
   const check = async () => {
     let a
@@ -73,11 +121,13 @@ export default function ConnectTelemetry({ project }) {
   }
   const chosen = SOURCES.find((s) => s.id === source)
   const box = { width: '100%', fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11, lineHeight: 1.5, boxSizing: 'border-box' }
+  const cmp = RULES.comparison
+  const twoCols = { display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', alignItems: 'start' }
 
   return (
     <div className="panel">
       <div className="panel-head"><h3 className="label">Connect telemetry</h3><span className="small muted">{contract.label}</span></div>
-      <div className="panel-pad" style={{ display: 'grid', gap: 18 }}>
+      <div className="panel-pad" style={{ display: 'grid', gap: 20 }}>
         <div style={{ display: 'grid', gap: 10 }}>
           <div className="h4">1 · Source</div>
           <div role="radiogroup" aria-label="Telemetry source" style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
@@ -93,29 +143,82 @@ export default function ConnectTelemetry({ project }) {
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
-          <div className="h4">2 · Contract for {project ? 'this project' : 'the example project'}</div>
+          <div className="h4">2 · Contract for {project ? 'this project' : 'the example project'}: twin stream and plant stream</div>
+          <div style={twoCols}>
+            <div className="panel panel-pad" data-stream="twin" style={{ display: 'grid', gap: 6 }}>
+              <div className="h4">Twin stream</div>
+              <p className="hint">Inputs given to the twin, and its predicted outputs. Field: <b>predicted_value</b> on each output channel, with <b>twin_version</b> naming the version that predicted it.</p>
+              <p className="hint">{FED_SAME}</p>
+            </div>
+            <div className="panel panel-pad" data-stream="plant" style={{ display: 'grid', gap: 6 }}>
+              <div className="h4">Plant stream</div>
+              <p className="hint">Measured inputs and measured outputs. Field: <b>physical_value</b> on every channel (null for a sensor dropout).</p>
+              <p className="hint"><b>{SYNTHETIC_PLANT}</b></p>
+            </div>
+          </div>
+          <p className="hint"><b>{ONE_MESSAGE}</b></p>
           <p className="hint">Topic <b>dtc-telemetry-{contract.projectId}</b> (would be created on connection). Message data: one reading as a JSON object with exactly these fields: {RULES.allowed_fields.join(', ')}.
             Attributes: schema <b>{RULES.schema}</b>, {RULES.required_attributes.join(', ')}, event_ts. The reading_key is the {RULES.reading_key}; it makes a resend harmless.</p>
           <div className="table-wrap">
-            <table className="grid" style={{ minWidth: 560 }}>
-              <thead><tr><th>Channel</th><th>twin_id</th><th>channel_id</th><th>direction</th><th>unit</th><th>Expected range</th></tr></thead>
-              <tbody>{contract.channels.map((c) => (
-                <tr key={`${c.twin_id}/${c.channel_id}`}><td>{c.name}{c.monitored === false ? ' (not monitored)' : ''}</td><td>{c.twin_id}</td><td>{c.channel_id}</td>
-                  <td>{c.direction}</td><td>{c.unit}</td><td className="num">{c.range[0]} – {c.range[1]}</td></tr>
-              ))}</tbody>
+            <table className="grid" style={{ minWidth: 760 }}>
+              <thead><tr><th>Channel</th><th>twin_id</th><th>channel_id</th><th>direction</th><th>Twin stream</th><th>Plant stream</th><th>unit</th><th>Expected range</th><th>Comparison</th></tr></thead>
+              <tbody>{contract.channels.map((c) => {
+                const output = c.direction === 'output'
+                return (
+                  <tr key={`${c.twin_id}/${c.channel_id}`} data-values={output ? 2 : 1}>
+                    <td>{c.name}{c.monitored === false ? ' (not monitored)' : ''}</td><td>{c.twin_id}</td><td>{c.channel_id}</td><td>{c.direction}</td>
+                    <td>{output ? 'predicted_value (twin_version)' : '— (fed the measured input)'}</td>
+                    <td>physical_value</td><td>{c.unit}</td><td className="num">{c.range[0]} – {c.range[1]}</td><td>{tolerance(c)}</td>
+                  </tr>
+                )
+              })}</tbody>
             </table>
           </div>
-          <p className="hint">physical_value is the measured value (null for a dropout); predicted_value is the twin’s prediction for an output and null for an input. Values outside the expected range are still accepted: classifying them is the engine’s job.</p>
+          <p className="hint">An input channel carries one value, the plant’s measured input (predicted_value is null). An output channel carries two: the twin’s prediction and the plant’s measurement, compared by the rule below. Values outside the expected range are still accepted: classifying them is the engine’s job.</p>
+        </div>
+
+        <div style={{ display: 'grid', gap: 8 }} data-testid="comparison-rule">
+          <div className="h4">3 · Comparison rule, as the engine applies it today</div>
+          <p className="hint"><b>{cmp.gap_formula}</b>, for each output channel, every tick.</p>
+          <ul className="hint" style={{ margin: 0, paddingLeft: 18, display: 'grid', gap: 4 }}>{cmp.rules.map((r) => <li key={r}>{r}</li>)}</ul>
+          <p className="small muted">Source: {cmp.source}.</p>
+        </div>
+
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div className="h4">4 · Time alignment</div>
+          <p className="hint"><b>{ALIGNMENT}</b></p>
+          <div className="table-wrap">
+            <table className="grid" style={{ minWidth: 0 }}>
+              <thead><tr><th>Status</th><th>What</th></tr></thead>
+              <tbody>
+                {ALIGNMENT_BUILT.map((t) => <tr key={t} data-status="built"><td>Built (one source)</td><td>{t}</td></tr>)}
+                {ALIGNMENT_DESIGNED.map((t) => <tr key={t} data-status="designed"><td>Not built, designed only</td><td>{t}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gap: 10 }}>
+          <div className="h4">5 · Where each value comes from</div>
+          <div className="table-wrap">
+            <table className="grid" style={{ minWidth: 0 }}>
+              <thead><tr><th>Status</th><th>What</th><th>Today</th></tr></thead>
+              <tbody>{SOURCES_DESIGNED.map(([t, today]) => <tr key={t} data-status="designed"><td>Not built, designed only</td><td>{t}</td><td>{today}</td></tr>)}</tbody>
+            </table>
+          </div>
         </div>
 
         <div style={{ display: 'grid', gap: 6 }}>
-          <div className="h4">3 · Access</div>
+          <div className="h4">6 · Access</div>
           <p className="hint">A publish-only service account would be used: it may publish to this project’s topic and nothing else, through short-lived credentials. No keys are issued, and none are shown here.</p>
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>
-          <div className="h4">4 · Check a sample message</div>
+          <div className="h4">7 · Check a sample message</div>
           <p className="hint">Checked in this browser with the same rules and reject codes as the Dataflow validator; nothing is sent anywhere.</p>
+          <div className="seg" role="group" aria-label="Sample" style={{ justifySelf: 'start', flexWrap: 'wrap' }}>
+            {SAMPLES.map((s) => <button key={s.id} aria-pressed={which === s.id} onClick={() => pick(s.id)}>{s.label}</button>)}
+          </div>
           <label className="small muted" htmlFor="sample-data">Message data</label>
           <textarea id="sample-data" className="textarea" rows={6} style={box} value={data} onChange={(e) => { setData(e.target.value); setResult(null) }} />
           <label className="small muted" htmlFor="sample-attrs">Attributes (JSON)</label>
@@ -136,7 +239,7 @@ export default function ConnectTelemetry({ project }) {
         </div>
 
         <div style={{ display: 'grid', gap: 6 }}>
-          <div className="h4">5 · Enable</div>
+          <div className="h4">8 · Enable</div>
           <div><button className="button button-small" disabled aria-describedby="enable-note">Enable connection</button></div>
           <p id="enable-note" className="hint">{DISABLED_NOTE}</p>
         </div>

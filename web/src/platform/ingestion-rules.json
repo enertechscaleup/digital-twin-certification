@@ -61,6 +61,25 @@
    "meaning": "Two messages with the same reading_key and different content (checked across messages, per tick)"
   }
  ],
+ "comparison": {
+  "protocol": {
+   "flag_after_consecutive": 3,
+   "nullify_after_consecutive": 10,
+   "nullify_tolerance_multiplier": 2.0,
+   "spike_jump_pct": 20.0,
+   "stuck_after_identical": 3,
+   "envelope_can_nullify": false
+  },
+  "gap_formula": "gap % = 100 × |physical − predicted| / |predicted|",
+  "rules": [
+   "Flagged after 3 consecutive readings beyond τ (the channel's tolerance).",
+   "Nullified after 10 consecutive readings beyond 2τ.",
+   "An input outside its assured range 3 times in a row flags the twin; input-envelope violations never nullify.",
+   "Sensor faults (dropout, stuck ×3, a jump above 20%) are data quality and never count as twin error.",
+   "The gap is not evaluated when the prediction is missing or zero, or when any input of the twin is not clean (data quality or outside its assured range)."
+  ],
+  "source": "engine/protocol.py: EscalationProtocol (defaults sealed into every run), engine/readings.py: gap_pct, engine/monitor.py: _evaluate_product"
+ },
  "example_project": {
   "label": "Example project",
   "name": "Fulfilment cell",
@@ -76,7 +95,8 @@
     "range": [
      300,
      900
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "dispatcher-op-001",
@@ -88,7 +108,8 @@
     "range": [
      40,
      110
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "dispatcher-op-001",
@@ -100,7 +121,8 @@
     "range": [
      40,
      110
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "amr1-op-001",
@@ -112,7 +134,8 @@
     "range": [
      38,
      110
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr1-op-001",
@@ -124,7 +147,8 @@
     "range": [
      44,
      52
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr1-op-001",
@@ -136,7 +160,8 @@
     "range": [
      1.2,
      2.0
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr1-op-001",
@@ -148,7 +173,8 @@
     "range": [
      1.0,
      2.1
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "amr1-op-001",
@@ -160,7 +186,8 @@
     "range": [
      30,
      140
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "amr2-op-001",
@@ -172,7 +199,8 @@
     "range": [
      38,
      110
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr2-op-001",
@@ -184,7 +212,8 @@
     "range": [
      44,
      52
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr2-op-001",
@@ -196,7 +225,8 @@
     "range": [
      1.2,
      2.0
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "amr2-op-001",
@@ -208,7 +238,8 @@
     "range": [
      1.0,
      2.1
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "amr2-op-001",
@@ -220,7 +251,8 @@
     "range": [
      30,
      140
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "pick-op-001",
@@ -232,7 +264,8 @@
     "range": [
      33.5,
      125
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "pick-op-001",
@@ -244,7 +277,8 @@
     "range": [
      33.5,
      125
-    ]
+    ],
+    "tolerance_pct": null
    },
    {
     "twin_id": "pick-op-001",
@@ -256,7 +290,8 @@
     "range": [
      300,
      1160
-    ]
+    ],
+    "tolerance_pct": 5
    },
    {
     "twin_id": "pick-op-001",
@@ -268,18 +303,32 @@
     "range": [
      4.4,
      10.1
-    ]
+    ],
+    "tolerance_pct": 5
    }
   ],
-  "sample": {
-   "data": "{\"run_id\": \"field-amr-fulfilment-cell-sample\", \"kind\": \"field\", \"tick\": 0, \"timestamp\": \"2026-10-01T00:00:00Z\", \"operational_hours\": 0, \"twin_id\": \"dispatcher-op-001\", \"twin_version\": \"1.0.0\", \"channel_id\": \"tasks_1\", \"direction\": \"output\", \"unit\": \"tasks/h\", \"physical_value\": 75.0, \"predicted_value\": 75.75, \"test_point\": null}",
-   "attributes": {
-    "schema": "dtc-reading/1",
-    "source": "sample",
-    "replay_id": "sample",
-    "event_ts": "2026-10-01T00:00:00Z",
-    "reading_key": "ed2f24490f9513205beead403a3aa28b",
-    "content_sha256": "b39cc2843bc2e819336b605f99a77fa06455cececf8bcf45f38c5d22b00158e9"
+  "samples": {
+   "plant_only": {
+    "data": "{\"run_id\": \"field-amr-fulfilment-cell-sample\", \"kind\": \"field\", \"tick\": 0, \"timestamp\": \"2026-10-01T00:00:00Z\", \"operational_hours\": 0, \"twin_id\": \"dispatcher-op-001\", \"twin_version\": \"1.0.0\", \"channel_id\": \"order_rate\", \"direction\": \"input\", \"unit\": \"lines/h\", \"physical_value\": 600.0, \"predicted_value\": null, \"test_point\": null}",
+    "attributes": {
+     "schema": "dtc-reading/1",
+     "source": "sample",
+     "replay_id": "sample",
+     "event_ts": "2026-10-01T00:00:00Z",
+     "reading_key": "07b2998549deb089596097790baa6ff1",
+     "content_sha256": "dab9eb56cd554c7b95add98341616805d50ab661c77106e9a323fd227b359771"
+    }
+   },
+   "both": {
+    "data": "{\"run_id\": \"field-amr-fulfilment-cell-sample\", \"kind\": \"field\", \"tick\": 0, \"timestamp\": \"2026-10-01T00:00:00Z\", \"operational_hours\": 0, \"twin_id\": \"dispatcher-op-001\", \"twin_version\": \"1.0.0\", \"channel_id\": \"tasks_1\", \"direction\": \"output\", \"unit\": \"tasks/h\", \"physical_value\": 75.0, \"predicted_value\": 75.75, \"test_point\": null}",
+    "attributes": {
+     "schema": "dtc-reading/1",
+     "source": "sample",
+     "replay_id": "sample",
+     "event_ts": "2026-10-01T00:00:00Z",
+     "reading_key": "ed2f24490f9513205beead403a3aa28b",
+     "content_sha256": "b39cc2843bc2e819336b605f99a77fa06455cececf8bcf45f38c5d22b00158e9"
+    }
    }
   }
  }
