@@ -68,6 +68,8 @@ Each replay ran its own Dataflow job (1 worker, n1-standard-1, Streaming Engine)
 | Late reading | Fault showcase with one tick-10 reading published 4 minutes late | Tick 10: first pane 16 readings, late pane 17 | Head identical (comparison copy); same decisions (labelled) |
 | Conflict and too late | One reading republished with different content (tick 20); one reading published only after the job was drained (tick 30) | Both conflicting copies dead-lettered; receipt `complete: false`, ticks 20 and 30 incomplete | **Refused** (fail closed): "tick 20: 16 readings, expected 17" |
 
+Dataflow counts identical duplicates each time a tick's pane fires. In the r1015b replay every tick fired twice (the second time apparently when the job was drained), so the 44 duplicates sent appear as 88 in the job counter. Validated readings were 765, with 765 distinct keys in BigQuery.
+
 The engine side is also covered offline: `tests/test_replay.py` replays all six sealed runs (head identical as a comparison copy, same decisions as an ingestion-labelled run) and checks every refusal.
 
 ### Two-source path (15 Oct 2026, replayed synthetic data)
