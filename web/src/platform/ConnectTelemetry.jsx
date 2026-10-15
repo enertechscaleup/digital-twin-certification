@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import RULES from './ingestion-rules.json'
 import { classify, readingKey, sha256Hex } from './ingestValidate.js'
 import PrototypeStatus from './PrototypeStatus.jsx'
-import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, SOURCES_DESIGNED } from './prototypeStatus.js'
+import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'
 
 // "Connect telemetry": how a project's telemetry would reach the platform, the message contract
 // built from the project's own channels (twin side and plant side), the comparison and time-alignment
@@ -19,7 +19,6 @@ const SOURCES = [
 ]
 const DISABLED_NOTE = 'Not enabled in this prototype. Connecting a live source needs a project registered on the platform, and the wizard saves configuration in this browser only.'
 const SYNTHETIC_PLANT = 'The plant data in this demonstration is synthetic. It has never been compared with a real physical system.'
-const ONE_MESSAGE = 'Today both streams arrive in one message, from one sender, with one timestamp. Separate twin and plant messages are designed, not built.'
 const FED_SAME = 'What the platform does today: the twin is fed the same values as the plant’s measured inputs.'
 const ALIGNMENT = 'The platform aligns twin and plant values on a shared tick index and evaluates a tick only when it is complete. Aligning two independent systems in time (clock synchronisation, resampling, lag compensation) is designed, not built.'
 const WIZARD_DEFAULT_TOLERANCE = 5 // the wizard's default tolerance for a twin taken from the catalogue (model/registry.js)
@@ -143,7 +142,7 @@ export default function ConnectTelemetry({ project }) {
               <p className="hint"><b>{SYNTHETIC_PLANT}</b></p>
             </div>
           </div>
-          <p className="hint"><b>{ONE_MESSAGE}</b></p>
+          <p className="hint"><b>{TWO_PATHS}</b></p>
           <p className="hint">Topic <b>dtc-telemetry-{contract.projectId}</b> (would be created on connection). Message data: one reading as a JSON object with exactly these fields: {RULES.allowed_fields.join(', ')}.
             Attributes: schema <b>{RULES.schema}</b>, {RULES.required_attributes.join(', ')}, event_ts. The reading_key is the {RULES.reading_key}; it makes a resend harmless.</p>
           <div className="table-wrap">
@@ -179,7 +178,7 @@ export default function ConnectTelemetry({ project }) {
               <thead><tr><th>Status</th><th>What</th></tr></thead>
               <tbody>
                 {ALIGNMENT_BUILT.map((t) => <tr key={t} data-status="built"><td>Built (one source)</td><td>{t}</td></tr>)}
-                {ALIGNMENT_DESIGNED.map((t) => <tr key={t} data-status="designed"><td>Not built, designed only</td><td>{t}</td></tr>)}
+                {ALIGNMENT_DESIGNED.map((t) => <tr key={t} data-status="designed"><td>{DESIGNED_LABEL}</td><td>{t}</td></tr>)}
               </tbody>
             </table>
           </div>
@@ -190,7 +189,7 @@ export default function ConnectTelemetry({ project }) {
           <div className="table-wrap">
             <table className="grid" style={{ minWidth: 0 }}>
               <thead><tr><th>Status</th><th>What</th><th>Today</th></tr></thead>
-              <tbody>{SOURCES_DESIGNED.map(([t, today]) => <tr key={t} data-status="designed"><td>Not built, designed only</td><td>{t}</td><td>{today}</td></tr>)}</tbody>
+              <tbody>{VALUE_SOURCES.map(([t, status, today]) => <tr key={t} data-status={status === DESIGNED_LABEL ? 'designed' : 'built'}><td>{status}</td><td>{t}</td><td>{today}</td></tr>)}</tbody>
             </table>
           </div>
         </div>

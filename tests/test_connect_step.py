@@ -187,8 +187,7 @@ class TestTwinAndPlantStreams(unittest.TestCase):
         self.assertIn('<div className="h4">Twin stream</div>', STEP)
         self.assertIn('<div className="h4">Plant stream</div>', STEP)
         self.assertIn("What the platform does today: the twin is fed the same values as the plant’s measured inputs.", STEP)
-        self.assertIn("Today both streams arrive in one message, from one sender, with one timestamp. "
-                      "Separate twin and plant messages are designed, not built.", STEP)
+        self.assertIn("<p className=\"hint\"><b>{TWO_PATHS}</b></p>", STEP)
 
     def test_input_shows_one_value_output_two(self):
         self.assertIn("data-values={output ? 2 : 1}", STEP)
@@ -216,7 +215,8 @@ class TestTwinAndPlantStreams(unittest.TestCase):
             self.assertIn(item, designed)
         self.assertIn("export const PROVENANCE = 'Per-value provenance'", STATUS_DATA)
         self.assertIn("export const SEPARATE_FEEDS = 'Separate twin messages and plant messages, joined per tick in the pipeline'", STATUS_DATA)
-        self.assertEqual(STEP.count("Not built, designed only"), 2)  # the two row labels (alignment, value sources)
+        self.assertIn("export const DESIGNED_LABEL = 'Not built, designed only'", STATUS_DATA)
+        self.assertIn("<td>{DESIGNED_LABEL}</td>", STEP)
 
     def test_designed_items_have_design_notes(self):
         doc = (ROOT / "docs/ingestion.md").read_text()

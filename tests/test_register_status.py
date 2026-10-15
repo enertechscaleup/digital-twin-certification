@@ -42,6 +42,8 @@ class TestWording(unittest.TestCase):
             "Re-verification on Cloud Run before a run is served",
             "Explanations by Gemini on Vertex AI, and the read-only evidence assistant",
             "Streaming ingestion (Pub/Sub, Dataflow, BigQuery, Cloud Storage) on replayed synthetic data on ${demo.date}",
+            "Separate twin and plant feeds (Pub/Sub, Dataflow, BigQuery), joined per tick, on replayed synthetic data on ${twoSource.date}; "
+            "both feeds replayed the same sealed run and shared its tick index",
         ])
         self.assertEqual(DEMO["date"], "2026-10-15")
 
@@ -49,7 +51,7 @@ class TestWording(unittest.TestCase):
         block = array("DESIGNED_NOT_BUILT")
         self.assertIn("A source connection for a real project: push from a customer system, pull from a historian or an OPC UA / "
                       "MQTT gateway, or a vendor twin API", block)
-        self.assertIn("`${SEPARATE_FEEDS} (separate twin and plant feeds)`", block)
+        self.assertNotIn("SEPARATE_FEEDS", block)  # built and proved on 2026-10-15 (two-source replays)
         self.assertIn("PROVENANCE,", block)
         self.assertIn("...ALIGNMENT_DESIGNED,", block)
         self.assertEqual(len(texts("ALIGNMENT_DESIGNED")), 5)
@@ -72,9 +74,37 @@ class TestWording(unittest.TestCase):
         self.assertRegex(VIEW, r'<nav className="crumbs"[^>]*>\s*<button[^\n]*onClick=\{onBack\}>Connect telemetry</button>')
 
 
+class TestTwoSourceResult(unittest.TestCase):
+    two = json.loads((WEB / "ingestion-two-source.json").read_text())
+
+    def test_recorded_key_test_agrees_with_the_pin(self):
+        pins = {r["run"]: r for r in json.loads((ROOT / "app/config/runs.json").read_text())["runs"]}
+        e = self.two["engine"]
+        self.assertEqual(e["pin_head"], pins[self.two["replayed_run"]["run"]]["core_ledger_head_hash"])
+        self.assertTrue(self.two["joined_identical_to_sealed"])
+        self.assertTrue(e["comparison_copy_head_identical"])
+        self.assertEqual(e["head"], e["pin_head"])
+        self.assertTrue(e["ingestion_labelled_same_decisions"])
+        self.assertFalse(e["ingestion_labelled_head_identical"])
+        self.assertEqual(self.two["shared_tick_index"], "Both publishers replayed the same sealed synthetic run and shared its tick index.")
+
+    def test_no_identifiers(self):
+        text = (WEB / "ingestion-two-source.json").read_text()
+        for pattern in (r"project-[0-9a-f]{8}", r"\b\d{11,12}\b", r"dtc-ingest-[0-9a-f]{8}", r"\d{4}-\d{2}-\d{2}_\d{2}_\d{2}_\d{2}-\d+",
+                        r"iam\.gserviceaccount\.com"):
+            self.assertNotRegex(text, pattern)
+
+    def test_built_row_and_two_paths_sentence(self):
+        self.assertIn("export const TWO_SOURCE_BUILT_LABEL = `Built and run on replayed synthetic data on ${twoSource.date}`", DATA)
+        self.assertIn("[SEPARATE_FEEDS, TWO_SOURCE_BUILT_LABEL,", DATA)
+        self.assertIn("[PROVENANCE, DESIGNED_LABEL,", DATA)
+        self.assertIn("'Two paths are built: one message carrying both sides, and separate twin and plant messages joined per tick "
+                      "(both demonstrated on replayed synthetic data).'", DATA)
+
+
 class TestOneSourceOfTruth(unittest.TestCase):
     def test_both_views_import_the_lists_and_hold_no_copies(self):
-        self.assertIn("import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, SOURCES_DESIGNED } from './prototypeStatus.js'", STEP)
+        self.assertIn("import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'", STEP)
         self.assertIn("from './prototypeStatus.js'", VIEW)
         for name in ("ALIGNMENT_BUILT", "ALIGNMENT_DESIGNED"):
             for t in texts(name):
@@ -84,11 +114,10 @@ class TestOneSourceOfTruth(unittest.TestCase):
         self.assertNotIn("Separate twin messages", STEP)
 
     def test_status_designed_list_holds_what_the_step_lists_as_designed(self):
-        # The step shows ALIGNMENT_DESIGNED and SOURCES_DESIGNED; the status list spreads the first and names both sources.
+        # The step shows ALIGNMENT_DESIGNED and VALUE_SOURCES; the status list spreads the first and names provenance.
         self.assertIn("{ALIGNMENT_DESIGNED.map(", STEP)
-        self.assertIn("{SOURCES_DESIGNED.map(", STEP)
-        self.assertIn("[PROVENANCE,", array("SOURCES_DESIGNED"))
-        self.assertIn("[SEPARATE_FEEDS,", array("SOURCES_DESIGNED"))
+        self.assertIn("{VALUE_SOURCES.map(", STEP)
+        self.assertIn("[PROVENANCE, DESIGNED_LABEL,", array("VALUE_SOURCES"))
 
 
 class TestNothingCollectedStoredOrSent(unittest.TestCase):

@@ -1,0 +1,41 @@
+{
+ "date": "2026-10-15",
+ "replay_id": "t1015a",
+ "replayed_run": {
+  "run": "assurance-amr_faults_showcase-seed42",
+  "title": "Fault types showcase"
+ },
+ "shared_tick_index": "Both publishers replayed the same sealed synthetic run and shared its tick index.",
+ "topics": {
+  "plant": "dtc-ingest-plant",
+  "twin": "dtc-ingest-twin"
+ },
+ "tables": [
+  "dtc_ingest.plant_validated",
+  "dtc_ingest.twin_validated",
+  "dtc_ingest.joined_readings"
+ ],
+ "counts": {
+  "validated_by_side": {
+   "plant": 765,
+   "twin": 360
+  },
+  "joined_readings": 765,
+  "ticks": 45,
+  "dead_lettered": 0,
+  "bigquery_rows": {
+   "plant_validated": 765,
+   "twin_validated": 360,
+   "joined_readings": 765
+  }
+ },
+ "joined_identical_to_sealed": true,
+ "engine": {
+  "comparison_copy_head_identical": true,
+  "pin_head": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125",
+  "head": "59952ac5a0d853bb7c5f9454824aee53538eba6eac8dee36f3ba236ef87dd125",
+  "ingestion_labelled_same_decisions": true,
+  "ingestion_labelled_head_identical": false
+ },
+ "receipt_sha256": "d08c1ec4fc2e0054454eb265e258d85689e4670d038b08a5ee9f0458e6d1fe4d"
+}

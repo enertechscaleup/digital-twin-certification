@@ -2,6 +2,7 @@
 // step and by the "Status of this prototype" view. tests/test_register_status.py checks both views
 // render from here and nowhere else.
 import demo from './ingestion-demo.json'
+import twoSource from './ingestion-two-source.json'
 
 export const ALIGNMENT_BUILT = [
   'Both values of a reading share one tick index (and one timestamp).',
@@ -19,10 +20,14 @@ export const ALIGNMENT_DESIGNED = [
 ]
 export const SEPARATE_FEEDS = 'Separate twin messages and plant messages, joined per tick in the pipeline'
 export const PROVENANCE = 'Per-value provenance'
-export const SOURCES_DESIGNED = [
-  [PROVENANCE, 'Which party supplied physical_value and which supplied predicted_value. Today nothing in the message says so.'],
-  [SEPARATE_FEEDS, 'Today one message carries both sides.'],
+export const DESIGNED_LABEL = 'Not built, designed only'
+export const TWO_SOURCE_BUILT_LABEL = `Built and run on replayed synthetic data on ${twoSource.date}`
+// [what, status, today]
+export const VALUE_SOURCES = [
+  [PROVENANCE, DESIGNED_LABEL, 'Which party supplied physical_value and which supplied predicted_value. Today nothing in the message says so; the separate publishing account for each feed separates the two only at the transport level.'],
+  [SEPARATE_FEEDS, TWO_SOURCE_BUILT_LABEL, `${twoSource.shared_tick_index} A tick missing either side is incomplete, and the engine refuses the run.`],
 ]
+export const TWO_PATHS = 'Two paths are built: one message carrying both sides, and separate twin and plant messages joined per tick (both demonstrated on replayed synthetic data).'
 
 export const STATUS_HEADING = 'Status of this prototype'
 export const STATUS_FIRST_LINE = 'Nothing was registered or sent. This prototype has no live registration.'
@@ -33,17 +38,17 @@ export const BUILT_AND_DEMONSTRATED = [
   'Re-verification on Cloud Run before a run is served',
   'Explanations by Gemini on Vertex AI, and the read-only evidence assistant',
   `Streaming ingestion (Pub/Sub, Dataflow, BigQuery, Cloud Storage) on replayed synthetic data on ${demo.date}`,
+  `Separate twin and plant feeds (Pub/Sub, Dataflow, BigQuery), joined per tick, on replayed synthetic data on ${twoSource.date}; both feeds replayed the same sealed run and shared its tick index`,
 ]
 export const DESIGNED_NOT_BUILT = [
   'A source connection for a real project: push from a customer system, pull from a historian or an OPC UA / MQTT gateway, or a vendor twin API',
-  `${SEPARATE_FEEDS} (separate twin and plant feeds)`,
   PROVENANCE,
   ...ALIGNMENT_DESIGNED,
 ]
 export const GO_LIVE_STEPS = [
   ['Register the project on the platform', false, 'Projects made in the wizard are configuration saved in this browser.'],
-  ['Create its topic, subscription and publish-only service account', false, 'The replay demonstration used one shared topic and service account created by script, not one per project.'],
-  ['The twin owner and the plant each publish their data', false, 'In the demonstration one publisher replayed a sealed synthetic run.'],
+  ['Create its topic, subscription and publish-only service account', false, 'The replay demonstrations used topics and service accounts created by script, not one set per project.'],
+  ['The twin owner and the plant each publish their data', false, 'In the demonstration, two publishers replayed the same sealed synthetic run, one feed each.'],
   ['Declare and seal the alignment window', false, 'Designed only.'],
   ['Monitoring starts', false, 'The engine monitors sealed and replayed synthetic runs only.'],
 ]

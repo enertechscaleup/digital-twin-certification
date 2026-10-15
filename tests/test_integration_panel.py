@@ -89,7 +89,7 @@ class TestDemonstrationPage(unittest.TestCase):
         self.assertEqual(imports_of(step), ["react", "./ingestion-rules.json", "./ingestValidate.js", "./PrototypeStatus.jsx", "./prototypeStatus.js"])
         self.assertEqual(imports_of(validator), [])
         self.assertEqual(imports_of(status_view), ["react", "./site.js", "./prototypeStatus.js"])
-        self.assertEqual(imports_of(status_data), ["./ingestion-demo.json"])
+        self.assertEqual(imports_of(status_data), ["./ingestion-demo.json", "./ingestion-two-source.json"])
         for code in (self.view, PANEL, step, validator, status_view, status_data):
             for banned in NETWORK:
                 self.assertNotIn(banned, code)

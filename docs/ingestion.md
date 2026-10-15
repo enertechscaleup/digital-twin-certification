@@ -13,7 +13,8 @@
 | Infrastructure scripts: create, stop every job, tear down (`ingest/infra/`) | **Built and run** (teardown: built, run on request) |
 | "Connect telemetry" step in the app: source choice, a message contract built from the project's channels, and a sample-message check in the browser with the pipeline's own rules (`web/src/platform/ConnectTelemetry.jsx`, rules exported by `ingest/export_rules.py`) | **Built**; enabling a live connection is **not built** (the button is disabled) |
 | Twin stream and plant stream shown per channel in the contract, with the comparison rule exported from the engine (`ingest/export_rules.py`) and the time-alignment rules the engine applies today | **Built** (presentation of today's single message format) |
-| Per-value provenance; separate twin and plant messages joined per tick; clock synchronisation, resampling, lag compensation and an alignment window per channel | **Designed, not built** (below) |
+| Two-source path: separate plant messages (`dtc-plant/1`) and twin messages (`dtc-twin/1`) on their own topics, validated and dead-lettered per side, joined per tick in Dataflow (`ingest/two_source.py`, `ingest/pipeline_two_source.py`, `ingest/publisher_two_source.py`, `ingest/seal_two_source.py`) | **Built and run on replayed synthetic data** (15 Oct 2026); both publishers replayed the same sealed run and shared its tick index |
+| Per-value provenance; clock synchronisation, resampling, lag compensation and an alignment window per channel | **Designed, not built** (below) |
 | Pulling from an asset historian or an OPC UA / MQTT gateway | **Designed, not built** (below) |
 | Predictions from a vendor twin API | **Designed, not built** (below) |
 | A production ledger writer that follows a live stream | **Designed, not built** (below) |
@@ -69,6 +70,19 @@ Each replay ran its own Dataflow job (1 worker, n1-standard-1, Streaming Engine)
 
 The engine side is also covered offline: `tests/test_replay.py` replays all six sealed runs (head identical as a comparison copy, same decisions as an ingestion-labelled run) and checks every refusal.
 
+### Two-source path (15 Oct 2026, replayed synthetic data)
+
+Each replay cut the same sealed run into a plant feed and a twin feed, published by two publish-only accounts to two topics. **Both feeds replayed the same sealed synthetic run and shared its tick index**; nothing aligned two independent clocks.
+
+| Replay | What was sent | Result |
+|---|---|---|
+| Fault showcase (the key test) | 765 plant and 360 twin messages, each side shuffled within ±3 ticks, with identical duplicates | Joined readings **byte-identical** to the sealed file (45 ticks); BigQuery 765 / 360 / 765 rows; **comparison copy head identical to the pin** (`59952ac5…`); **ingestion-labelled run: same decisions**, head differs by design |
+| Full cycle | 1,360 plant and 640 twin messages, shuffled, duplicates | Byte-identical (80 ticks); **comparison copy head identical** (`466d5d1f…`); same decisions (labelled) |
+| Late twin message, invalid messages, duplicates | One twin message of tick 10 published 4 minutes late; one malformed message per reject reason on each side, plus a twin message on an input channel | Tick 10 first incomplete, then joined in a later pane; all 19 invalid messages in their own side's dead-letter subscription, none in the outputs; head identical, same decisions |
+| Missing side and conflicts | One plant message (tick 20) and one twin message (tick 30) never sent; one conflicting copy on each side (ticks 12 and 14) | Ticks 12, 14, 20 and 30 incomplete; both copies of each conflict dead-lettered; **the engine refused** the run |
+
+The same round trip is proved offline on all six sealed runs (`tests/test_two_source_split_join.py`). One earlier attempt of the third case timed out because of a test-message error in the publisher (a malformed message without its replay id); the job was stopped by the run script's safety stop, and the case was re-run after the fix.
+
 **Cost:** the six Dataflow jobs together used about 30 vCPU-minutes, about $0.05 at list prices; Pub/Sub, BigQuery and Cloud Storage use was within free tiers or a fraction of a cent.
 
 ## Designed, not built
@@ -81,7 +95,7 @@ The engine side is also covered offline: `tests/test_replay.py` replays all six 
 
 **Per-value provenance.** Each value would carry who supplied it (the plant operator's system for `physical_value`, the twin owner's endpoint for `predicted_value`), authenticated per party and sealed with the readings, so that a prediction can never be supplied by the plant side or a measurement by the twin side. Today nothing in the message says which party supplied which value. Not built.
 
-**Separate twin messages and plant messages, joined per tick in the pipeline.** Two message types on two topics, one per party: plant messages carry `physical_value` per (tick, twin, channel); twin messages carry `predicted_value` and `twin_version` for the output channels, and the inputs the twin was given. The pipeline would join them per (run, tick, twin, channel); a tick missing either side would be recorded as "not evaluated" for the affected channels and never guessed, and a twin input that differs from the plant's measured input would be visible. Not built.
+**Separate twin messages and plant messages, joined per tick in the pipeline: built (above).** Plant messages carry `physical_value` for every channel; twin messages carry `predicted_value` and `twin_version` for the output channels. The pipeline joins them per (run, tick, twin, channel); a tick missing either side is incomplete and the engine refuses the whole run. Still designed only: the engine's own per-channel "not evaluated" rule for a tick missing one side, and twin messages that report the inputs the twin was given, so that a twin input differing from the plant's measured input would be visible.
 
 **Clock synchronisation, resampling, lag compensation and an alignment window per channel.** Today alignment is a shared tick index: both values of a reading share one tick and one timestamp, and a tick is evaluated only when complete. Two independent systems would need clock synchronisation (each source's clock offset measured and recorded), resampling of readings taken at different rates onto the tick grid, lag compensation where a measurement trails its prediction, and an alignment window per channel, declared and sealed into the evidence so that alignment cannot be tuned after the fact to hide a gap. Not built.
 
