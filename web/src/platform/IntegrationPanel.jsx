@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import ConnectTelemetry from './ConnectTelemetry.jsx'
 import demo from './ingestion-demo.json'
 
 // The Integration step of a project made in the wizard. It shows how telemetry would enter the
@@ -8,8 +8,7 @@ import demo from './ingestion-demo.json'
 const FIELDS = 'run_id, kind, tick, timestamp, operational_hours, twin_id, twin_version, channel_id, direction, unit, physical_value, predicted_value, test_point'
 const yesNo = (v) => (v ? 'Yes' : 'No')
 
-export default function IntegrationPanel() {
-  const [source, setSource] = useState('push')
+export default function IntegrationPanel({ project }) {
   const c = demo.counts
   const e = demo.engine
   const pre = { margin: 0, padding: '12px 14px', overflow: 'auto', fontSize: 11, lineHeight: 1.6, fontFamily: 'ui-monospace, Menlo, monospace', color: 'var(--ink-mid)', background: 'var(--paper)', border: '1px solid var(--rule)', borderRadius: 3 }
@@ -25,24 +24,8 @@ export default function IntegrationPanel() {
           The figures are a recorded result from a file in the repository, not a live status, and nothing on this page starts a cloud job.
         </p>
       </div>
+      <ConnectTelemetry project={project} />
       <div style={{ display: 'grid', gap: 18, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', alignItems: 'start' }}>
-        <div className="panel">
-          <div className="panel-head"><h3 className="label">Telemetry source</h3>
-            <div className="seg" role="group" aria-label="Telemetry source">
-              <button aria-pressed={source === 'push'} onClick={() => setSource('push')}>Push to Pub/Sub</button>
-              <button aria-pressed={source === 'pull'} onClick={() => setSource('pull')}>Pull from a historian</button>
-            </div>
-          </div>
-          <div className="panel-pad" style={{ display: 'grid', gap: 8 }}>
-            {source === 'push' ? (
-              <p className="hint">The asset side publishes every reading to the Pub/Sub topic <b>{demo.topic}</b> ({demo.region}).
-                In the demonstration the publisher replayed a sealed synthetic run; no asset is connected.</p>
-            ) : (
-              <p className="hint">A connector would read each channel from the asset&apos;s historian and publish it in the same format.
-                <b> Not built</b>: designed only (docs/ingestion.md).</p>
-            )}
-          </div>
-        </div>
         <div className="panel">
           <div className="panel-head"><h3 className="label">Topic and message format</h3></div>
           <div className="panel-pad" style={{ display: 'grid', gap: 8 }}>

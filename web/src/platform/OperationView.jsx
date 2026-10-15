@@ -338,7 +338,7 @@ function PendingProject({ project }) {
           <p className="hint">The platform never builds or adjusts a twin itself. Until the owners register their twins, this project holds configuration only.</p>
         </div>
       </div>
-      <IntegrationPanel />
+      <IntegrationPanel project={project} />
       {drawer && <ConfigDrawer project={project} onClose={() => setDrawer(false)} />}
     </div>
   )

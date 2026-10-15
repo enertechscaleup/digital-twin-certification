@@ -31,6 +31,20 @@ ALLOWED_FIELDS = (
 )
 SCHEMA = "dtc-reading/1"
 TIMESTAMP = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$")
+REQUIRED_ATTRIBUTES = ("replay_id", "reading_key", "content_sha256")
+# Every reason a message can be rejected for, in the order classify() checks them. The app's
+# "Check a sample message" uses the same list (ingest/export_rules.py writes it for the browser).
+REJECT_REASONS = (
+    ("bad_attributes", "Attributes missing or wrong: schema, replay_id, reading_key, content_sha256, or a reading_key that does not match the reading"),
+    ("content_hash_mismatch", "content_sha256 is not the SHA-256 of the message data"),
+    ("malformed_json", "The data is not a JSON object, or uses NaN / Infinity"),
+    ("forbidden_field", "A field outside the 13 ingested fields (for example injected_faults)"),
+    ("missing_field", "One of the 13 ingested fields is missing"),
+    ("wrong_kind", "kind is not \"field\", or test_point is not null"),
+    ("bad_type", "A field has the wrong type (tick an integer >= 0, timestamp in UTC ISO 8601, text fields non-empty, values numbers or null)"),
+    ("unknown_channel", "The twin and channel are not in the project, or the direction or unit differs"),
+    ("conflicting_duplicate", "Two messages with the same reading_key and different content (checked across messages, per tick)"),
+)
 BQ_SCHEMA = ",".join([
     "run_id:STRING", "kind:STRING", "tick:INTEGER", "timestamp:TIMESTAMP", "operational_hours:FLOAT",
     "twin_id:STRING", "twin_version:STRING", "channel_id:STRING", "direction:STRING", "unit:STRING",
@@ -57,7 +71,7 @@ def classify(data: bytes, attributes: dict, channels: dict) -> tuple[str, dict |
     ``channels``: (twin_id, channel_id) -> (direction, unit) for the project being replayed."""
     if attributes.get("kind") == "control":
         return "control", {}
-    if attributes.get("schema") != SCHEMA or not all(attributes.get(k) for k in ("replay_id", "reading_key", "content_sha256")):
+    if attributes.get("schema") != SCHEMA or not all(attributes.get(k) for k in REQUIRED_ATTRIBUTES):
         return "invalid", "bad_attributes"
     if hashlib.sha256(data).hexdigest() != attributes["content_sha256"]:
         return "invalid", "content_hash_mismatch"

@@ -29,8 +29,11 @@ class TestWording(unittest.TestCase):
         for banned in ("fetch(", "XMLHttpRequest", "sendBeacon", "http://", "https://", "Connected", "connected to Pub/Sub", "live status:"):
             self.assertNotIn(banned, PANEL)
         self.assertNotRegex(PANEL, r"\bimport\b.*\bapi\.js\b")
-        # The only buttons switch which explanation is shown.
-        self.assertEqual(re.findall(r"onClick=\{\(\) => (\w+)\(", PANEL), ["setSource", "setSource"])
+        # The panel itself has no buttons; the Connect telemetry step's only handlers choose a source,
+        # check a sample in the browser, or recompute its hashes.
+        self.assertEqual(re.findall(r"onClick=", PANEL), [])
+        step = (WEB / "ConnectTelemetry.jsx").read_text()
+        self.assertEqual(sorted(set(re.findall(r"onClick=\{(?:\(\) => )?(\w+)", step))), ["check", "recompute", "setSource"])
 
     def test_both_labels_used_exactly(self):
         self.assertIn("Comparison copy", PANEL)
@@ -46,7 +49,7 @@ class TestPlacement(unittest.TestCase):
         self.assertEqual(users, ["IngestionView.jsx", "OperationView.jsx"])
         view = (WEB / "OperationView.jsx").read_text()
         pending = view[view.index("function PendingProject"):]
-        self.assertIn("<IntegrationPanel />", pending[:pending.index("\n}\n")])
+        self.assertIn("<IntegrationPanel project={project} />", pending[:pending.index("\n}\n")])
         self.assertNotIn("IntegrationPanel", (WEB / "EvidenceView.jsx").read_text())
 
 
@@ -77,8 +80,13 @@ class TestDemonstrationPage(unittest.TestCase):
     def test_no_project_data_and_no_network_calls(self):
         imports = re.findall(r"^import .* from '([^']+)'", self.view, re.M)
         self.assertEqual(imports, ["./IntegrationPanel.jsx"])
-        self.assertEqual(re.findall(r"^import .* from '([^']+)'", PANEL, re.M), ["react", "./ingestion-demo.json"])
-        for code in (self.view, PANEL):
+        imports_of = lambda code: re.findall(r"^import .* from '([^']+)'", code, re.M)
+        step = (WEB / "ConnectTelemetry.jsx").read_text()
+        validator = (WEB / "ingestValidate.js").read_text()
+        self.assertEqual(imports_of(PANEL), ["./ConnectTelemetry.jsx", "./ingestion-demo.json"])
+        self.assertEqual(imports_of(step), ["react", "./ingestion-rules.json", "./ingestValidate.js"])
+        self.assertEqual(imports_of(validator), [])
+        for code in (self.view, PANEL, step, validator):
             for banned in NETWORK:
                 self.assertNotIn(banned, code)
 

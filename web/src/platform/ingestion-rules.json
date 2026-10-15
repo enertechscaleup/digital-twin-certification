@@ -1,0 +1,286 @@
+{
+ "source": "Exported by ingest/export_rules.py from engine/readings.py (ALLOWED_FIELDS) and ingest/pipeline.py (SCHEMA, REQUIRED_ATTRIBUTES, TIMESTAMP, REJECT_REASONS). Do not edit by hand.",
+ "schema": "dtc-reading/1",
+ "allowed_fields": [
+  "run_id",
+  "kind",
+  "tick",
+  "timestamp",
+  "operational_hours",
+  "twin_id",
+  "twin_version",
+  "channel_id",
+  "direction",
+  "unit",
+  "physical_value",
+  "predicted_value",
+  "test_point"
+ ],
+ "required_attributes": [
+  "replay_id",
+  "reading_key",
+  "content_sha256"
+ ],
+ "timestamp_pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$",
+ "reading_key": "first 32 hex characters of the SHA-256 of replay_id, run_id, tick, twin_id and channel_id, joined with a vertical bar",
+ "reject_reasons": [
+  {
+   "code": "bad_attributes",
+   "meaning": "Attributes missing or wrong: schema, replay_id, reading_key, content_sha256, or a reading_key that does not match the reading"
+  },
+  {
+   "code": "content_hash_mismatch",
+   "meaning": "content_sha256 is not the SHA-256 of the message data"
+  },
+  {
+   "code": "malformed_json",
+   "meaning": "The data is not a JSON object, or uses NaN / Infinity"
+  },
+  {
+   "code": "forbidden_field",
+   "meaning": "A field outside the 13 ingested fields (for example injected_faults)"
+  },
+  {
+   "code": "missing_field",
+   "meaning": "One of the 13 ingested fields is missing"
+  },
+  {
+   "code": "wrong_kind",
+   "meaning": "kind is not \"field\", or test_point is not null"
+  },
+  {
+   "code": "bad_type",
+   "meaning": "A field has the wrong type (tick an integer >= 0, timestamp in UTC ISO 8601, text fields non-empty, values numbers or null)"
+  },
+  {
+   "code": "unknown_channel",
+   "meaning": "The twin and channel are not in the project, or the direction or unit differs"
+  },
+  {
+   "code": "conflicting_duplicate",
+   "meaning": "Two messages with the same reading_key and different content (checked across messages, per tick)"
+  }
+ ],
+ "example_project": {
+  "label": "Example project",
+  "name": "Fulfilment cell",
+  "project_id": "amr-fulfilment-cell",
+  "channels": [
+   {
+    "twin_id": "dispatcher-op-001",
+    "twin": "dispatcher",
+    "channel_id": "order_rate",
+    "name": "Order lines",
+    "direction": "input",
+    "unit": "lines/h",
+    "range": [
+     300,
+     900
+    ]
+   },
+   {
+    "twin_id": "dispatcher-op-001",
+    "twin": "dispatcher",
+    "channel_id": "tasks_1",
+    "name": "Tasks to AMR 1",
+    "direction": "output",
+    "unit": "tasks/h",
+    "range": [
+     40,
+     110
+    ]
+   },
+   {
+    "twin_id": "dispatcher-op-001",
+    "twin": "dispatcher",
+    "channel_id": "tasks_2",
+    "name": "Tasks to AMR 2",
+    "direction": "output",
+    "unit": "tasks/h",
+    "range": [
+     40,
+     110
+    ]
+   },
+   {
+    "twin_id": "amr1-op-001",
+    "twin": "amr1",
+    "channel_id": "task_rate",
+    "name": "Assigned tasks",
+    "direction": "input",
+    "unit": "tasks/h",
+    "range": [
+     38,
+     110
+    ]
+   },
+   {
+    "twin_id": "amr1-op-001",
+    "twin": "amr1",
+    "channel_id": "battery",
+    "name": "Battery voltage",
+    "direction": "input",
+    "unit": "V",
+    "range": [
+     44,
+     52
+    ]
+   },
+   {
+    "twin_id": "amr1-op-001",
+    "twin": "amr1",
+    "channel_id": "speed_setpoint",
+    "name": "Speed setpoint",
+    "direction": "input",
+    "unit": "m/s",
+    "range": [
+     1.2,
+     2.0
+    ]
+   },
+   {
+    "twin_id": "amr1-op-001",
+    "twin": "amr1",
+    "channel_id": "speed",
+    "name": "Travel speed",
+    "direction": "output",
+    "unit": "m/s",
+    "range": [
+     1.0,
+     2.1
+    ]
+   },
+   {
+    "twin_id": "amr1-op-001",
+    "twin": "amr1",
+    "channel_id": "deliveries",
+    "name": "Tote deliveries",
+    "direction": "output",
+    "unit": "totes/h",
+    "range": [
+     30,
+     140
+    ]
+   },
+   {
+    "twin_id": "amr2-op-001",
+    "twin": "amr2",
+    "channel_id": "task_rate",
+    "name": "Assigned tasks",
+    "direction": "input",
+    "unit": "tasks/h",
+    "range": [
+     38,
+     110
+    ]
+   },
+   {
+    "twin_id": "amr2-op-001",
+    "twin": "amr2",
+    "channel_id": "battery",
+    "name": "Battery voltage",
+    "direction": "input",
+    "unit": "V",
+    "range": [
+     44,
+     52
+    ]
+   },
+   {
+    "twin_id": "amr2-op-001",
+    "twin": "amr2",
+    "channel_id": "speed_setpoint",
+    "name": "Speed setpoint",
+    "direction": "input",
+    "unit": "m/s",
+    "range": [
+     1.2,
+     2.0
+    ]
+   },
+   {
+    "twin_id": "amr2-op-001",
+    "twin": "amr2",
+    "channel_id": "speed",
+    "name": "Travel speed",
+    "direction": "output",
+    "unit": "m/s",
+    "range": [
+     1.0,
+     2.1
+    ]
+   },
+   {
+    "twin_id": "amr2-op-001",
+    "twin": "amr2",
+    "channel_id": "deliveries",
+    "name": "Tote deliveries",
+    "direction": "output",
+    "unit": "totes/h",
+    "range": [
+     30,
+     140
+    ]
+   },
+   {
+    "twin_id": "pick-op-001",
+    "twin": "pick_station",
+    "channel_id": "arrivals_1",
+    "name": "Tote arrivals, AMR 1",
+    "direction": "input",
+    "unit": "totes/h",
+    "range": [
+     33.5,
+     125
+    ]
+   },
+   {
+    "twin_id": "pick-op-001",
+    "twin": "pick_station",
+    "channel_id": "arrivals_2",
+    "name": "Tote arrivals, AMR 2",
+    "direction": "input",
+    "unit": "totes/h",
+    "range": [
+     33.5,
+     125
+    ]
+   },
+   {
+    "twin_id": "pick-op-001",
+    "twin": "pick_station",
+    "channel_id": "pick_rate",
+    "name": "Pick rate",
+    "direction": "output",
+    "unit": "picks/h",
+    "range": [
+     300,
+     1160
+    ]
+   },
+   {
+    "twin_id": "pick-op-001",
+    "twin": "pick_station",
+    "channel_id": "cycle_time",
+    "name": "Cycle time",
+    "direction": "output",
+    "unit": "s",
+    "range": [
+     4.4,
+     10.1
+    ]
+   }
+  ],
+  "sample": {
+   "data": "{\"run_id\": \"field-amr-fulfilment-cell-sample\", \"kind\": \"field\", \"tick\": 0, \"timestamp\": \"2026-10-01T00:00:00Z\", \"operational_hours\": 0, \"twin_id\": \"dispatcher-op-001\", \"twin_version\": \"1.0.0\", \"channel_id\": \"tasks_1\", \"direction\": \"output\", \"unit\": \"tasks/h\", \"physical_value\": 75.0, \"predicted_value\": 75.75, \"test_point\": null}",
+   "attributes": {
+    "schema": "dtc-reading/1",
+    "source": "sample",
+    "replay_id": "sample",
+    "event_ts": "2026-10-01T00:00:00Z",
+    "reading_key": "ed2f24490f9513205beead403a3aa28b",
+    "content_sha256": "b39cc2843bc2e819336b605f99a77fa06455cececf8bcf45f38c5d22b00158e9"
+   }
+  }
+ }
+}

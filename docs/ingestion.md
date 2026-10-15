@@ -11,7 +11,9 @@
 | Dataflow pipeline, Apache Beam (Python), streaming: raw copy to Cloud Storage, shape validation, per-tick de-duplication and canonical order, validated files to Cloud Storage, rows to BigQuery, invalid messages to a dead-letter topic (`ingest/pipeline.py`) | **Built and run on replayed synthetic data** |
 | Seal step: hashes raw and validated objects, counts dead letters and BigQuery rows, writes a receipt (`ingest/seal.py`) | **Built and run on replayed synthetic data** |
 | Infrastructure scripts: create, stop every job, tear down (`ingest/infra/`) | **Built and run** (teardown: built, run on request) |
-| Pulling from an asset historian | **Designed, not built** (below) |
+| "Connect telemetry" step in the app: source choice, a message contract built from the project's channels, and a sample-message check in the browser with the pipeline's own rules (`web/src/platform/ConnectTelemetry.jsx`, rules exported by `ingest/export_rules.py`) | **Built**; enabling a live connection is **not built** (the button is disabled) |
+| Pulling from an asset historian or an OPC UA / MQTT gateway | **Designed, not built** (below) |
+| Predictions from a vendor twin API | **Designed, not built** (below) |
 | A production ledger writer that follows a live stream | **Designed, not built** (below) |
 | Continuous monitoring in the cloud, authentication of real sources, scale | **Not built** |
 
@@ -69,7 +71,9 @@ The engine side is also covered offline: `tests/test_replay.py` replays all six 
 
 ## Designed, not built
 
-**Pulling from a historian.** A connector per historian type, run on a schedule, reading each channel's values for a time window, mapping the historian's tags to (twin, channel), stamping each value with its source timestamp and publishing it in the same message format. Ticks then need an alignment rule (the engine compares tick for tick); that rule would be declared per channel and sealed into the evidence. Not built.
+**Pulling from a historian or an OPC UA / MQTT gateway.** A connector per source type, run on a schedule, reading each channel's values for a time window, mapping the historian's tags to (twin, channel), stamping each value with its source timestamp and publishing it in the same message format. Ticks then need an alignment rule (the engine compares tick for tick); that rule would be declared per channel and sealed into the evidence. Not built.
+
+**Predictions from a vendor twin API.** For each tick, the platform would ask each twin owner's endpoint for the twin's prediction at the measured inputs and place it in `predicted_value` beside the measured value, through the same boundary the engine already uses for verification and joint tests (`engine/boundary.py`). In the prototype the owners' endpoints are simulated. Not built.
 
 **A ledger writer that follows a live stream.** In the slice the engine runs once, after the job is drained, as a single local process: one writer by construction. In production: one writer per ledger holding a lease; each append a compare-and-swap on the stored head (for example a Cloud Storage generation precondition); a tick processed only when complete (watermark plus the expected set of channels) or explicitly closed as incomplete, with that recorded; idempotent appends keyed by sequence number; recovery from the last checkpoint. Not built.
 
