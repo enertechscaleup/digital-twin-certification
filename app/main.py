@@ -24,6 +24,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.assistant import AssistantError, GeminiChat, ask as assistant_ask
 from app.assistant_tools import Toolbox
+from app.media import router as media_router
 from app.evidence import RunEvidence, load_runs_config, store_from_env, verify_run
 from app.state import core_upto, explanations_upto, state_at
 from engine.lineage import REGISTERED, load_identities, product_identity, registered_versions
@@ -413,6 +414,9 @@ def ask(run: str, body: AskRequest, request: Request) -> dict:
     except Exception:
         raise HTTPException(503, "the assistant is unavailable right now")
 
+
+# The demo video and its poster, streamed from their private bucket (app/media.py).
+app.include_router(media_router)
 
 # The built React dashboard: app/static in the container, web/dist in development.
 _STATIC = next((d for d in (Path(__file__).parent / "static", Path(__file__).parent.parent / "web" / "dist")

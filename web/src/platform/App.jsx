@@ -3,16 +3,17 @@ import { Wordmark } from './components.jsx'
 import { loadProjects } from './api.js'
 import { PREVIEW_PROJECTS } from './model/projects.js'
 import { loadSaved } from './model/store.js'
-import { HOME_URL } from './site.js'
+import { DEMO_ROUTE, HOME_URL } from './site.js'
 import ProjectsView from './ProjectsView.jsx'
 import NewProject from './NewProject.jsx'
 import OperationView from './OperationView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import CompositionView from './CompositionView.jsx'
 import IngestionView from './IngestionView.jsx'
+import DemoVideo from './DemoVideo.jsx'
 
 // Screens are addressed by a bare hash token, e.g. #projects, #new, #composition, #ingestion,
-// #oil-gas-compressor-train.
+// #oil-gas-compressor-train, #demo.
 const readRoute = () => (window.location.hash || '#projects').slice(1) || 'projects'
 
 export default function App() {
@@ -44,6 +45,7 @@ export default function App() {
             <a href="#projects" aria-current={section === 'projects' ? 'page' : undefined}>Projects</a>
             <a href="#composition" aria-current={section === 'composition' ? 'page' : undefined}>Composition patterns</a>
             <a href="#new" aria-current={section === 'new' ? 'page' : undefined}>New project</a>
+            <a href={DEMO_ROUTE} aria-current={section === 'demo' ? 'page' : undefined}>Demo video</a>
           </nav>
         </div>
       </header>
@@ -54,6 +56,7 @@ export default function App() {
           : route === 'new' ? <NewProject />
           : route === 'composition' ? <CompositionView real={real} />
           : route === 'ingestion' ? <IngestionView />
+          : route === 'demo' ? <DemoVideo />
           : <ProjectsView real={real} error={error} />}
       </main>
       <footer className="footer">

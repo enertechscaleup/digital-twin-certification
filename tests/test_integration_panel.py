@@ -67,9 +67,9 @@ class TestDemonstrationPage(unittest.TestCase):
     def test_route(self):
         app = (WEB / "App.jsx").read_text()
         self.assertIn("route === 'ingestion' ? <IngestionView />", app)
-        # The top navigation is unchanged: Home, Projects, Composition patterns, New project.
+        # The ingestion page adds no nav item: Home, Projects, Composition patterns, New project, Demo video.
         nav = re.search(r'<nav className="app-nav"[^>]*>(.*?)</nav>', app, re.S).group(1)
-        self.assertEqual(re.findall(r">([^<]+)</a>", nav), ["Home", "Projects", "Composition patterns", "New project"])
+        self.assertEqual(re.findall(r">([^<]+)</a>", nav), ["Home", "Projects", "Composition patterns", "New project", "Demo video"])
 
     def test_page_content(self):
         self.assertIn('<h1 className="display display-l">Streaming ingestion demonstration</h1>', self.view)

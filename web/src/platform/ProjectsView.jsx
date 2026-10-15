@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { ArrowUpRight, FlaskConical, Plus, ShieldCheck } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, FlaskConical, Plus, ShieldCheck } from 'lucide-react'
 import { finalLevels } from './api.js'
 import { Graph, StatusPill } from './components.jsx'
 import { PREVIEW_PROJECTS, channelCount, topology } from './model/projects.js'
 import { mockRun } from './model/mockRun.js'
 import { loadSaved } from './model/store.js'
+import { DEMO_ROUTE } from './site.js'
 
 function mockLatest(project) {
   const run = project.runs[0]
@@ -77,6 +78,11 @@ export default function ProjectsView({ real, error }) {
           </p>
         </div>
       </div>
+
+      <a className="demo-cta" href={DEMO_ROUTE}>
+        <span className="demo-cta-text">New here? Watch the 4-minute demo video</span>
+        <span className="button button-primary">Watch the demo <ArrowRight size={15} strokeWidth={1.8} /></span>
+      </a>
 
       <section className="section" aria-labelledby="proj-h">
         <div className="section-head">

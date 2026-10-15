@@ -27,7 +27,7 @@ class TestNavHome(unittest.TestCase):
         nav = re.search(r'<nav className="app-nav"[^>]*>(.*?)</nav>', topbar(), re.S).group(1)
         links = re.findall(r"<a [^>]*>[^<]*</a>", nav)
         self.assertEqual(links[0], "<a href={HOME_URL}>Home</a>")  # no target, no aria-current, no onClick
-        self.assertEqual(len(links), 4)
+        self.assertEqual(len(links), 5)  # Home, Projects, Composition patterns, New project, Demo video
 
     def test_topbar_logo_links_home(self):
         self.assertIn('<Wordmark href={HOME_URL} label="TwinEvidence home" />', topbar())
