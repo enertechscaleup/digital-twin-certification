@@ -9,6 +9,8 @@
 # Outputs (git-ignored): deck-assets/ingest-runs/<replay id>/. Env: MACHINE (default n1-standard-1),
 # SKIP_ENGINE=1 (stop after sealing), AFTER_DRAIN_FILE (publish this kept-back reading after the drain).
 set -euo pipefail
+# Never leave a job running: on any error or interruption, stop every dtc-ingest-* job and check.
+trap 'echo "$(date -u +%FT%TZ) error or interruption: stopping every dtc-ingest-* job"; ingest/infra/stop_all.sh' ERR INT TERM
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 . ingest/infra/names.sh
@@ -36,8 +38,9 @@ echo "$(ts) launching the Dataflow job"
   --num_workers 1 --max_num_workers 1 --autoscaling_algorithm NONE --worker_machine_type "$MACHINE" \
   --enable_streaming_engine \
   --subscription "projects/$PROJECT/subscriptions/$SUB" --dlq_topic "projects/$PROJECT/topics/$DLQ" \
-  --out_prefix "gs://$BUCKET/" --bq_table "$PROJECT:$DATASET.$TABLE" --channels_json "$CHANNELS" 2>&1 \
-  | grep -v -E "^WARNING|UserWarning|warnings.warn" | tail -3
+  --out_prefix "gs://$BUCKET/" --bq_table "$PROJECT:$DATASET.$TABLE" --channels_json "$CHANNELS" \
+  > "$OUT/$RID.launch.log" 2>&1
+tail -2 "$OUT/$RID.launch.log"
 JOB_ID="$(gcloud dataflow jobs list --project "$PROJECT" --region "$REGION" --status active --filter "name=$JOB" --format 'value(id)' | head -1)"
 [ -n "$JOB_ID" ] || { echo "job not found"; exit 1; }
 echo "$(ts) job $JOB_ID submitted"
