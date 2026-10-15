@@ -65,5 +65,7 @@ for role in roles/pubsub.subscriber roles/pubsub.viewer; do
 done
 gcloud pubsub topics add-iam-policy-binding "$DLQ" --member "serviceAccount:$SA_DF" --role roles/pubsub.publisher "${P[@]}" >/dev/null
 gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" --member "serviceAccount:$SA_DF" --role roles/storage.objectAdmin "${P[@]}" >/dev/null
-bq --project_id "$PROJECT" add-iam-policy-binding --member "serviceAccount:$SA_DF" --role roles/bigquery.dataEditor "$PROJECT:$DATASET" >/dev/null
+# Dataset-level grant through BigQuery DCL (bq add-iam-policy-binding needs allowlisting).
+bq --project_id "$PROJECT" --location "$REGION" query --nouse_legacy_sql --quiet \
+  "GRANT \`roles/bigquery.dataEditor\` ON SCHEMA \`$PROJECT.$DATASET\` TO \"serviceAccount:$SA_DF\"" >/dev/null
 echo "done: bucket gs://$BUCKET, dataset $DATASET, topic $TOPIC"
