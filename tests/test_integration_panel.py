@@ -37,14 +37,50 @@ class TestWording(unittest.TestCase):
         self.assertIn("Ingestion-labelled run", PANEL)
 
 
+NETWORK = ("fetch(", "XMLHttpRequest", "sendBeacon", "WebSocket", "EventSource", "http://", "https://", "import.meta.env")
+
+
 class TestPlacement(unittest.TestCase):
-    def test_only_on_the_pending_page_of_a_wizard_project(self):
-        users = [p.name for p in WEB.rglob("*.jsx") if "<IntegrationPanel" in p.read_text()]
-        self.assertEqual(users, ["OperationView.jsx"])
+    def test_only_on_a_wizard_project_and_the_demonstration_page(self):
+        users = sorted(p.name for p in WEB.rglob("*.jsx") if "<IntegrationPanel" in p.read_text())
+        self.assertEqual(users, ["IngestionView.jsx", "OperationView.jsx"])
         view = (WEB / "OperationView.jsx").read_text()
         pending = view[view.index("function PendingProject"):]
         self.assertIn("<IntegrationPanel />", pending[:pending.index("\n}\n")])
         self.assertNotIn("IntegrationPanel", (WEB / "EvidenceView.jsx").read_text())
+
+
+class TestDemonstrationPage(unittest.TestCase):
+    view = (WEB / "IngestionView.jsx").read_text()
+
+    def test_link_at_the_top_of_new_project(self):
+        wizard = (WEB / "NewProject.jsx").read_text()
+        link = re.search(r'<a [^>]*href="#ingestion"[^>]*>([^<]*)<', wizard)
+        self.assertIsNotNone(link)
+        self.assertEqual(link.group(1).strip(), "See the streaming ingestion demonstration")
+        head = wizard[wizard.index('<div className="page-head">'):wizard.index('<div className="wizard">')]
+        self.assertIn('href="#ingestion"', head)
+
+    def test_route(self):
+        app = (WEB / "App.jsx").read_text()
+        self.assertIn("route === 'ingestion' ? <IngestionView />", app)
+        # The top navigation is unchanged: Home, Projects, Composition patterns, New project.
+        nav = re.search(r'<nav className="app-nav"[^>]*>(.*?)</nav>', app, re.S).group(1)
+        self.assertEqual(re.findall(r">([^<]+)</a>", nav), ["Home", "Projects", "Composition patterns", "New project"])
+
+    def test_page_content(self):
+        self.assertIn('<h1 className="display display-l">Streaming ingestion demonstration</h1>', self.view)
+        self.assertIn(">Demonstrated on replayed synthetic data. Not live telemetry.</p>", self.view)
+        self.assertRegex(self.view, r'<nav className="crumbs"[^>]*><a href="#new">New project</a>')
+        self.assertIn("<IntegrationPanel />", self.view)
+
+    def test_no_project_data_and_no_network_calls(self):
+        imports = re.findall(r"^import .* from '([^']+)'", self.view, re.M)
+        self.assertEqual(imports, ["./IntegrationPanel.jsx"])
+        self.assertEqual(re.findall(r"^import .* from '([^']+)'", PANEL, re.M), ["react", "./ingestion-demo.json"])
+        for code in (self.view, PANEL):
+            for banned in NETWORK:
+                self.assertNotIn(banned, code)
 
 
 class TestRecordedFile(unittest.TestCase):

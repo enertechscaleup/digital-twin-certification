@@ -9,8 +9,9 @@ import NewProject from './NewProject.jsx'
 import OperationView from './OperationView.jsx'
 import EvidenceView from './EvidenceView.jsx'
 import CompositionView from './CompositionView.jsx'
+import IngestionView from './IngestionView.jsx'
 
-// Screens are addressed by a bare hash token, e.g. #projects, #new, #composition,
+// Screens are addressed by a bare hash token, e.g. #projects, #new, #composition, #ingestion,
 // #oil-gas-compressor-train.
 const readRoute = () => (window.location.hash || '#projects').slice(1) || 'projects'
 
@@ -52,6 +53,7 @@ export default function App() {
           : !real && !error && route.includes('-') ? <div className="content-width page muted">Loading project…</div>
           : route === 'new' ? <NewProject />
           : route === 'composition' ? <CompositionView real={real} />
+          : route === 'ingestion' ? <IngestionView />
           : <ProjectsView real={real} error={error} />}
       </main>
       <footer className="footer">

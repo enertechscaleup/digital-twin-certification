@@ -69,6 +69,7 @@ export default function NewProject() {
             <button className="button button-ghost button-small" onClick={() => { setP(BLANK); go(0) }}>Clear form</button>
           </div>
         </div>
+        <a className="text-link" href="#ingestion" style={{ justifySelf: 'start' }}>See the streaming ingestion demonstration <ArrowRight size={15} strokeWidth={2} /></a>
       </div>
 
       <div className="wizard">
