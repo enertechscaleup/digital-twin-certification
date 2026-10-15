@@ -214,6 +214,18 @@ class TestValidatorPerSide(unittest.TestCase):
         twin_on_input = {k: self.inp[k] for k in ts.TWIN_FIELDS}
         self.assertEqual(self.verdict("twin", twin_on_input), "wrong_side")
 
+    def test_publisher_invalid_messages_get_their_reason(self):
+        from publisher_two_source import invalid_messages
+        plant_good, twin_good = ts.split_reading(self.out)
+        input_twin = {k: self.inp[k] for k in ts.TWIN_FIELDS}
+        for side, good in (("plant", plant_good), ("twin", twin_good)):
+            cases = invalid_messages(side, good, input_twin, "r")
+            for reason, data, attrs in cases:
+                with self.subTest(side=side, reason=reason):
+                    self.assertEqual(ts.classify_side(side, data, attrs, self.channels), ("invalid", reason))
+            single_message_codes = {c for c, _ in ts.REJECT_REASONS} - {"conflicting_duplicate"}
+            self.assertEqual({r for r, _, _ in cases}, single_message_codes)
+
     def test_codes_listed(self):
         self.assertEqual([c for c, _ in ts.REJECT_REASONS][-1], "conflicting_duplicate")
         self.assertIn("wrong_side", [c for c, _ in ts.REJECT_REASONS])
