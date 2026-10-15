@@ -81,7 +81,9 @@ export default function IntegrationPanel() {
             <table className="grid" style={{ minWidth: 0 }}>
               <tbody>
                 {row('Messages published', c.published)}
-                {row('of which identical duplicates', c.identical_duplicates_sent)}
+                {row('· readings of the sealed run', c.readings)}
+                {row('· identical duplicates (sent on purpose)', c.identical_duplicates_sent)}
+                {row('· end-of-replay marker (not a reading)', c.end_of_replay_markers)}
                 {row('Raw messages stored', c.raw_messages_stored)}
                 {row('Rejected to the dead-letter topic', c.dead_lettered)}
                 {row('Validated readings', `${c.validated_readings} (${c.ticks} ticks)`)}

@@ -23,6 +23,8 @@
   "published": 810,
   "readings": 765,
   "identical_duplicates_sent": 44,
+  "end_of_replay_markers": 1,
+  "invalid_messages_sent": 0,
   "raw_messages_stored": 810,
   "validated_readings": 765,
   "ticks": 45,

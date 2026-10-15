@@ -64,6 +64,12 @@ class TestRecordedFile(unittest.TestCase):
 
     def test_counts_are_consistent(self):
         c = DEMO["counts"]
+        # Every published message is accounted for, and the panel lists each part.
+        self.assertEqual(c["published"], c["readings"] + c["identical_duplicates_sent"] + c["end_of_replay_markers"]
+                         + c["invalid_messages_sent"])
+        self.assertEqual(c["dead_lettered"], c["invalid_messages_sent"])
+        for key in ("readings", "identical_duplicates_sent", "end_of_replay_markers"):
+            self.assertIn(f"c.{key}", PANEL)
         self.assertEqual(c["validated_readings"], c["readings"])
         self.assertEqual(c["bigquery_rows"], c["validated_readings"])
         self.assertEqual(c["raw_messages_stored"], c["published"])

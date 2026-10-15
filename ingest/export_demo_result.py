@@ -34,6 +34,10 @@ def main() -> None:
     example_attrs = attributes(example_line.encode(), rid, example)
     date = receipt["sealed_at"][:10]
     c = receipt["counts"]
+    known = {"reading", "identical_duplicate", "end_marker"}
+    other = {k: v for k, v in c["published_by_category"].items() if k not in known and not k.startswith("invalid_")}
+    if other:
+        raise SystemExit(f"published categories the panel does not show: {other}")
     result = {
         "label": f"Streaming ingestion: demonstrated on replayed synthetic data on {date}. Not live telemetry. Not tested at scale.",
         "date": date,
@@ -49,6 +53,8 @@ def main() -> None:
             "published": c["published"],
             "readings": c["published_by_category"].get("reading", 0),
             "identical_duplicates_sent": c["published_by_category"].get("identical_duplicate", 0),
+            "end_of_replay_markers": c["published_by_category"].get("end_marker", 0),
+            "invalid_messages_sent": sum(v for k, v in c["published_by_category"].items() if k.startswith("invalid_")),
             "raw_messages_stored": c["raw_messages"],
             "validated_readings": c["validated_readings"],
             "ticks": c["ticks"],
