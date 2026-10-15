@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import RULES from './ingestion-rules.json'
 import { classify, readingKey, sha256Hex } from './ingestValidate.js'
 import PrototypeStatus from './PrototypeStatus.jsx'
-import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'
+import { ALIGNMENT_BUILT, ALIGNMENT_BUILT_LABEL, ALIGNMENT_BUILT_NOTE, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'
 
 // "Connect telemetry": how a project's telemetry would reach the platform, the message contract
 // built from the project's own channels (twin side and plant side), the comparison and time-alignment
@@ -11,7 +11,7 @@ import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_S
 
 const SOURCES = [
   { id: 'push', label: 'Push to Pub/Sub', status: 'Demonstrated on replayed synthetic data',
-    text: 'The asset side publishes every reading as one message to the project’s topic: the data is the reading in the format below, and the attributes identify it. The Dataflow pipeline then checks, de-duplicates and orders the readings per tick before the engine sees them. This is the path demonstrated on replayed synthetic data.' },
+    text: 'The asset side publishes every reading as one message to the project’s topic: the data is the reading in the format below, and the attributes identify it. The Dataflow pipeline then checks, de-duplicates and orders the readings per tick before the engine sees them. This path and separate twin and plant feeds (section 5) are both demonstrated on replayed synthetic data.' },
   { id: 'pull', label: 'Pull from a historian or an OPC UA / MQTT gateway', status: 'Designed, not built',
     text: 'A connector would read each mapped tag or topic on a schedule, stamp each value with its source timestamp and publish it to the same topic in the same format. The channel table below would be its mapping. Ticks would need an alignment rule, declared per channel and sealed into the evidence.' },
   { id: 'vendor', label: 'Vendor twin API', status: 'Designed, not built',
@@ -177,11 +177,12 @@ export default function ConnectTelemetry({ project }) {
             <table className="grid" style={{ minWidth: 0 }}>
               <thead><tr><th>Status</th><th>What</th></tr></thead>
               <tbody>
-                {ALIGNMENT_BUILT.map((t) => <tr key={t} data-status="built"><td>Built (one source)</td><td>{t}</td></tr>)}
+                {ALIGNMENT_BUILT.map((t) => <tr key={t} data-status="built"><td>{ALIGNMENT_BUILT_LABEL}</td><td>{t}</td></tr>)}
                 {ALIGNMENT_DESIGNED.map((t) => <tr key={t} data-status="designed"><td>{DESIGNED_LABEL}</td><td>{t}</td></tr>)}
               </tbody>
             </table>
           </div>
+          <p className="small muted" data-testid="alignment-note">{ALIGNMENT_BUILT_NOTE}</p>
         </div>
 
         <div style={{ display: 'grid', gap: 10 }}>

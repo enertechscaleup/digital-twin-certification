@@ -4,13 +4,15 @@
 import demo from './ingestion-demo.json'
 import twoSource from './ingestion-two-source.json'
 
+export const ALIGNMENT_BUILT_LABEL = 'Built (both paths)'
 export const ALIGNMENT_BUILT = [
-  'Both values of a reading share one tick index (and one timestamp).',
-  'A tick is evaluated only when it is complete: every channel of the project, once.',
-  'A reading that arrives late re-issues its tick, and the complete tick is used (tested in replay r1015e).',
-  'An incomplete tick makes the engine refuse the run; it is never patched.',
-  'Two copies of a reading with different content are dead-lettered, never resolved.',
+  'Twin and plant values are matched on one tick index.',
+  'A tick is evaluated only when it is complete: every channel of the project, and both sides of every output.',
+  'A reading that arrives late re-issues its tick, and the complete tick is used (tested in replays r1015e and t1015e).',
+  'An incomplete tick, including one missing either side, makes the engine refuse the run; it is never patched.',
+  'Two copies of a reading with different content are dead-lettered, never resolved (on each feed).',
 ]
+export const ALIGNMENT_BUILT_NOTE = 'Built rows were demonstrated on replayed synthetic data. Both feeds replayed the same sealed run and shared its tick index. This is not clock synchronisation.'
 export const ALIGNMENT_DESIGNED = [
   'Clock synchronisation between the twin side’s and the plant side’s systems',
   'Resampling of readings taken at different rates onto the tick grid',

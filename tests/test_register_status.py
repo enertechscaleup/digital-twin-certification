@@ -104,7 +104,7 @@ class TestTwoSourceResult(unittest.TestCase):
 
 class TestOneSourceOfTruth(unittest.TestCase):
     def test_both_views_import_the_lists_and_hold_no_copies(self):
-        self.assertIn("import { ALIGNMENT_BUILT, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'", STEP)
+        self.assertIn("import { ALIGNMENT_BUILT, ALIGNMENT_BUILT_LABEL, ALIGNMENT_BUILT_NOTE, ALIGNMENT_DESIGNED, DESIGNED_LABEL, TWO_PATHS, VALUE_SOURCES } from './prototypeStatus.js'", STEP)
         self.assertIn("from './prototypeStatus.js'", VIEW)
         for name in ("ALIGNMENT_BUILT", "ALIGNMENT_DESIGNED"):
             for t in texts(name):

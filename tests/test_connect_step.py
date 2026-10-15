@@ -210,7 +210,18 @@ class TestTwinAndPlantStreams(unittest.TestCase):
         built = STATUS_DATA[STATUS_DATA.index("export const ALIGNMENT_BUILT"):STATUS_DATA.index("export const ALIGNMENT_DESIGNED")]
         designed = STATUS_DATA[STATUS_DATA.index("export const ALIGNMENT_DESIGNED"):STATUS_DATA.index("export const SEPARATE_FEEDS")]
         self.assertEqual(built.count("\n  '"), 5)
-        self.assertIn("r1015e", built)
+        for row in ("'Twin and plant values are matched on one tick index.'",
+                    "'A tick is evaluated only when it is complete: every channel of the project, and both sides of every output.'",
+                    "'A reading that arrives late re-issues its tick, and the complete tick is used (tested in replays r1015e and t1015e).'",
+                    "'An incomplete tick, including one missing either side, makes the engine refuse the run; it is never patched.'",
+                    "'Two copies of a reading with different content are dead-lettered, never resolved (on each feed).'"):
+            self.assertIn(row, built)
+        self.assertIn("export const ALIGNMENT_BUILT_LABEL = 'Built (both paths)'", STATUS_DATA)
+        self.assertIn("<td>{ALIGNMENT_BUILT_LABEL}</td>", STEP)
+        self.assertNotIn("one source", STEP + STATUS_DATA)
+        self.assertIn("export const ALIGNMENT_BUILT_NOTE = 'Built rows were demonstrated on replayed synthetic data. Both feeds replayed "
+                      "the same sealed run and shared its tick index. This is not clock synchronisation.'", STATUS_DATA)
+        self.assertIn('<p className="small muted" data-testid="alignment-note">{ALIGNMENT_BUILT_NOTE}</p>', STEP)
         for item in ("Clock synchronisation", "Resampling", "Lag compensation", "An alignment window per channel", "never guessed"):
             self.assertIn(item, designed)
         self.assertIn("export const PROVENANCE = 'Per-value provenance'", STATUS_DATA)
