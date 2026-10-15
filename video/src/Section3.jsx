@@ -8,7 +8,7 @@ import { TOKENS, sans, serif } from './theme.js'
 // with short dissolves, and status colours appear here only.
 
 const FPS = 30
-const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+export const clamp = { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
 const FADE = 8
 
 // Shot list (script v3, plus v4's Gemini shot): start frame, length, and how each recording maps onto it. Each beat is
@@ -35,9 +35,9 @@ const SHOTS = [
 export const SECTION3_FRAMES = 3364
 export const SECTION3_SHOTS = SHOTS
 
-function s11Segments() {
+function s11Segments(src = 's1_1') {
   // Rests on each project at double speed (1.5 s); the pointer's travel fills the rest of the shot.
-  const m = DATA.s1_1.marks, len = SHOTS.find((x) => x.id === 's1_1').len / FPS
+  const m = DATA[src].marks, len = SHOTS.find((x) => x.id === 's1_1').len / FPS
   const glide = (m.on_first - m.to_first + m.on_second - m.to_second) / (len - (m.to_second - m.on_first + m.to_open - m.on_second) / 2)
   return [[m.to_first, m.on_first, glide], [m.on_first, m.to_second, 2], [m.to_second, m.on_second, glide], [m.on_second, m.to_open, 2]]
 }
@@ -70,7 +70,7 @@ function sourceTime(segments, f) {
   return to
 }
 
-function Screencast({ shot, segments, camera, stills = [], children }) {
+export function Screencast({ shot, segments, camera, stills = [], children }) {
   const f = useCurrentFrame()
   const frames = DATA[shot].frames
   const t = sourceTime(segments, f)
@@ -111,18 +111,18 @@ function Ticked({ shot, len, hold = 0, camera, caption }) {
 }
 
 /** A view that fits ``box`` (CSS px of the 1920×1080 page) into the frame with some margin. */
-function fit(box, margin = 1.25) {
+export function fit(box, margin = 1.25) {
   const s = Math.min(1920 / (box.width * margin), 1080 / (box.height * margin))
   const cx = box.x + box.width / 2, cy = box.y + box.height / 2
   return { s, x: 960 - cx * s, y: 540 - cy * s }
 }
-const unite = (a, b) => {
+export const unite = (a, b) => {
   const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y)
   return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y }
 }
-const FULL = { s: 1, x: 0, y: 0 }
-const blend = (a, b, t) => ({ s: a.s + (b.s - a.s) * t, x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
-const ease = Easing.inOut(Easing.cubic)
+export const FULL = { s: 1, x: 0, y: 0 }
+export const blend = (a, b, t) => ({ s: a.s + (b.s - a.s) * t, x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
+export const ease = Easing.inOut(Easing.cubic)
 
 // 3.1: from the full view, close in on the Shaft speed gap; when the motor flags (tick 19,
 // the last shot) pan to show the gap and the motor's status card together.
@@ -155,7 +155,7 @@ const camera32 = (f, boxes) => blend(FULL, fitLeft(unite(boxes.channel, boxes.ca
 // 4.2: close on the Evidence ledger while an entry opens, pull back during the scroll,
 // then close on the Evidence integrity panel through the re-verify result. Boxes are the
 // panels' positions in the recording (CSS px of the 1920×1080 page).
-function localFrame(segments, t) {
+export function localFrame(segments, t) {
   let f = 0
   for (const [from, to, speed] of segments) {
     if (t <= to) return f + Math.max(0, t - from) / speed * FPS
@@ -196,8 +196,8 @@ function GemLabel() {
 }
 
 /** Still screenshots with a keyframed camera: keys [{f, still, box (or null for the whole page), margin}]. */
-const capped = (view, max = 2.3) => (view.s <= max ? view : { s: max, x: 960 - (960 - view.x) / view.s * max, y: 540 - (540 - view.y) / view.s * max })
-function Stills({ shot, keys }) {
+export const capped = (view, max = 2.3) => (view.s <= max ? view : { s: max, x: 960 - (960 - view.x) / view.s * max, y: 540 - (540 - view.y) / view.s * max })
+export function Stills({ shot, keys }) {
   const f = useCurrentFrame()
   const { stills } = DATA[shot]
   const box = (k) => (Array.isArray(k.box) ? k.box.map((b) => stills[k.still].boxes[b]).reduce(unite) : stills[k.still].boxes[k.box])
@@ -238,20 +238,21 @@ function Caption({ opacity, children }) {
   )
 }
 
-function Title() {
+export function Title({ text = 'What we built.' }) {
   const f = useCurrentFrame()
   const inn = interpolate(f, [4, 26], [0, 1], { ...clamp, easing: Easing.bezier(0.23, 1, 0.32, 1) })
   return (
     <AbsoluteFill style={{ background: TOKENS.paper, alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ opacity: inn, transform: `translateY(${(1 - inn) * 16}px)`, textAlign: 'center' }}>
         <div style={{ fontFamily: sans, fontSize: 20, fontWeight: 800, letterSpacing: '0.18em', color: TOKENS.orange }}>TWINEVIDENCE</div>
-        <div style={{ fontFamily: serif, fontSize: 120, letterSpacing: '-0.04em', color: TOKENS.ink, marginTop: 8 }}>What we built.</div>
+        <div style={{ fontFamily: serif, fontSize: 120, letterSpacing: '-0.04em', color: TOKENS.ink, marginTop: 8 }}>{text}</div>
       </div>
     </AbsoluteFill>
   )
 }
 
-function Shot({ shot }) {
+function Shot({ shot, footage = {} }) {
+  const src = footage[shot.id] || shot.id
   if (shot.id === 'title') return <Title />
   if (shot.id === 'lib') return <Stills shot="lib" keys={LIB_KEYS} />
   if (shot.id === 'joint') return <Stills shot="joint" keys={JOINT_KEYS} />
@@ -264,8 +265,8 @@ function Shot({ shot }) {
     return <Screencast shot="gem" segments={gemSegments()} camera={cameraGem}
       stills={[{ from: DATA.gem.marks.answer_still, to: DATA.gem.marks.end + 1, file: 'hold_answer.png' }]}><GemLabel /></Screencast>
   }
-  if (shot.id === 's1_1') return <Screencast shot="s1_1" segments={s11Segments()} />
-  if (shot.segments) return <Screencast shot={shot.id} segments={shot.segments} />
+  if (shot.id === 's1_1') return <Screencast shot={src} segments={s11Segments(src)} />
+  if (shot.segments) return <Screencast shot={src} segments={shot.segments} />
   if (shot.id === 's2_1') return <Ticked shot="s2_1" len={shot.len} />
   if (shot.id === 'lin') return <Ticked shot="lin" len={shot.len} hold={30} camera={cameraLin} />
   if (shot.id === 's3_1') return <Ticked shot="s3_1" len={shot.len} hold={30} camera={camera31} />
@@ -275,19 +276,19 @@ function Shot({ shot }) {
   )
 }
 
-export function Section3() {
+export function Section3({ footage } = {}) {
   return (
     <AbsoluteFill style={{ background: TOKENS.paper }}>
       {SHOTS.map((s, i) => (
         <Sequence key={s.id} from={s.at} durationInFrames={s.len + (i < SHOTS.length - 1 ? FADE : 0)}>
-          <FadeIn first={i === 0}><Shot shot={s} /></FadeIn>
+          <FadeIn first={i === 0}><Shot shot={s} footage={footage} /></FadeIn>
         </Sequence>
       ))}
     </AbsoluteFill>
   )
 }
 
-function FadeIn({ first, children }) {
+export function FadeIn({ first, children }) {
   const f = useCurrentFrame()
   return <AbsoluteFill style={{ opacity: first ? 1 : interpolate(f, [0, FADE], [0, 1], clamp) }}>{children}</AbsoluteFill>
 }

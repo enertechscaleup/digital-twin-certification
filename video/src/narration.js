@@ -28,3 +28,21 @@ export const CUES = [
   // The ledger and integrity shots, then the close (Section 4).
   { id: 's3_close', section: 3, shot: 's4_2', text: 'Every state change is sealed in a tamper-evident ledger — evidence an insurer could underwrite against, or a reliability team could act on. The same engine runs any twin, from a single motor to a full production line: this is how manufacturing operations turn raw telemetry into trusted, GenAI-assisted decisions, at scale.' },
 ]
+
+// Script v5 (draft, 3:57): v4 with three edited lines (new ids, so v4's audio stays as it was),
+// then the new-project block (N1–N4, after Section 3) and a line over Section 4.
+const V5_EDITS = {
+  s2_intro: { id: 's2_intro_v5', text: 'Introducing TwinEvidence! An independent physical-AI assurance platform for the industrial world. It starts from a library of digital twins, each one engineered, owned and maintained by the vendor whose equipment it represents.' },
+  s2_test: { id: 's2_test_v5', text: "Test each twin on its own vendor's engine, under a governance layer built on grounded Gemini AI — it can only reason from the platform's own verified data, never from free generation. Every twin is identified, versioned, and sealed in a tamper-evident ledger." },
+  s3_close: { id: 's3_close_v5', text: 'Every state change is sealed in a tamper-evident ledger — evidence an insurer could underwrite against, or a reliability team could act on. The same engine runs any twin, from a single motor to a full production line: this is how manufacturing operations turn raw telemetry into trusted, Gemini AI-assisted decisions, at scale.' },
+}
+export const CUES_V5 = [
+  ...CUES.map((c) => (V5_EDITS[c.id] ? { ...c, ...V5_EDITS[c.id] } : c)),
+  // The new-project block (section 'new'; anchors are its shot starts).
+  { id: 'n1', section: 'new', shot: 'n1', text: "For a new project, the platform sets out how its data would arrive: the plant's measured values on one side, the twin's predictions on the other, channel by channel — and the same rule the engine uses to compare them." },
+  { id: 'n2', section: 'new', shot: 'n2', text: "A sample message is checked in the browser with the pipeline's own rules. Change one unit, and it is rejected, with the reason." },
+  { id: 'n3', section: 'new', shot: 'n3', text: 'Behind it, on Google Cloud, Pub/Sub carries the readings, and Dataflow checks, de-duplicates and orders them into BigQuery and Cloud Storage. We replayed a sealed synthetic run through it, as one feed and as separate twin and plant feeds. The decisions came out the same, and the comparison copy matched the sealed evidence.' },
+  { id: 'n4', section: 'new', shot: 'n4', text: 'And where the prototype stops, the page says so. Everything here runs on replayed synthetic data. Clock synchronisation, per-value provenance, and a source connection for a real project are designed, not built.' },
+  // Over Section 4, starting as the wordmark has appeared (its picture is unchanged).
+  { id: 's4_close', section: 4, anchor: 1.2, text: 'TwinEvidence closes the gap between prediction and reality, helping reduce risk and make autonomy scalable in manufacturing and industrial operations.' },
+]
