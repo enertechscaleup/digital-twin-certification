@@ -37,7 +37,7 @@ def invalid_messages(side: str, good: dict, input_twin: dict | None, replay_id: 
         a = attributes(side, data, replay_id, row if isinstance(row, dict) else good)
         a.update(over)
         out.append((reason, data, {k: v for k, v in a.items() if v is not None}))
-    add("bad_attributes", good, replay_id=None)
+    add("bad_attributes", good, reading_key=None)  # keeps replay_id, so the raw copy files it under its replay
     add("wrong_side", good, sender=other)
     add("content_hash_mismatch", good, content_sha256="0" * 64)
     add("malformed_json", b'{"run_id": "truncated')
