@@ -26,7 +26,7 @@ export const DESIGNED_LABEL = 'Not built, designed only'
 export const TWO_SOURCE_BUILT_LABEL = `Built and run on replayed synthetic data on ${twoSource.date}`
 // [what, status, today]
 export const VALUE_SOURCES = [
-  [PROVENANCE, DESIGNED_LABEL, 'Which party supplied physical_value and which supplied predicted_value. Today nothing in the message says so; the separate publishing account for each feed separates the two only at the transport level.'],
+  [PROVENANCE, DESIGNED_LABEL, 'Which party supplied physical_value and which supplied predicted_value. The separate feeds carry a sender attribute, but the publisher declares it and nothing verifies it or seals it into the evidence; the separate publishing account for each feed separates the two only at the transport level.'],
   [SEPARATE_FEEDS, TWO_SOURCE_BUILT_LABEL, `${twoSource.shared_tick_index} A tick missing either side is incomplete, and the engine refuses the run.`],
 ]
 export const TWO_PATHS = 'Two paths are built: one message carrying both sides, and separate twin and plant messages joined per tick (both demonstrated on replayed synthetic data).'

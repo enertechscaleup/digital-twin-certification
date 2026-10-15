@@ -97,7 +97,10 @@ class TestTwoSourceResult(unittest.TestCase):
     def test_built_row_and_two_paths_sentence(self):
         self.assertIn("export const TWO_SOURCE_BUILT_LABEL = `Built and run on replayed synthetic data on ${twoSource.date}`", DATA)
         self.assertIn("[SEPARATE_FEEDS, TWO_SOURCE_BUILT_LABEL,", DATA)
-        self.assertIn("[PROVENANCE, DESIGNED_LABEL,", DATA)
+        self.assertIn("[PROVENANCE, DESIGNED_LABEL, 'Which party supplied physical_value and which supplied predicted_value. "
+                      "The separate feeds carry a sender attribute, but the publisher declares it and nothing verifies it or seals it "
+                      "into the evidence; the separate publishing account for each feed separates the two only at the transport level.'],", DATA)
+        self.assertNotIn("nothing in the message says so", DATA)
         self.assertIn("'Two paths are built: one message carrying both sides, and separate twin and plant messages joined per tick "
                       "(both demonstrated on replayed synthetic data).'", DATA)
 
